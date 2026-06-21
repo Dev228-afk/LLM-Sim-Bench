@@ -1,0 +1,40 @@
+# Compilation & build artifacts
+build/
+bin/
+lib/
+obj/
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.ipynb_checkpoints/
+venv/
+.venv/
+env/
+
+# IDEs and editors
+.vscode/
+.idea/
+*.suo
+*.user
+*.userossc
+*.sln
+*.vcxproj
+*.filters
+
+# OS generated
+.DS_Store
+Thumbs.db
+
+# Output results that are generated dynamically
+results/*.png
+results/*.csv
+results/*.json

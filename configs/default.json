@@ -1,0 +1,44 @@
+{
+  "simulation": {
+    "model_params_B": 7.0,
+    "kv_cache_capacity": 1024,
+    "kv_transfer_latency_ms": 0.5
+  },
+  "prefill_hardware": {
+    "name": "H100_SXM",
+    "compute_tflops": 989.0,
+    "memory_bandwidth_gbps": 3350.0,
+    "memory_capacity_gb": 80.0,
+    "network_bandwidth_gbps": 450.0,
+    "network_latency_ms": 0.005
+  },
+  "decode_hardware": {
+    "name": "L4",
+    "compute_tflops": 121.0,
+    "memory_bandwidth_gbps": 300.0,
+    "memory_capacity_gb": 24.0,
+    "network_bandwidth_gbps": 25.0,
+    "network_latency_ms": 0.1
+  },
+  "scheduler": {
+    "type": "FCFS",
+    "priority_prompt_weight": 0.1,
+    "priority_generation_weight": 0.5,
+    "continuous_batching_max_batch": 8
+  },
+  "eviction_policy": "LRU",
+  "workload": {
+    "num_requests": 50,
+    "prompt_length_min": 64,
+    "prompt_length_max": 2048,
+    "generation_length_min": 16,
+    "generation_length_max": 512,
+    "arrival_rate_rps": 10.0,
+    "seed": 42
+  },
+  "output": {
+    "results_dir": "results",
+    "save_csv": true,
+    "generate_plots": true
+  }
+}
