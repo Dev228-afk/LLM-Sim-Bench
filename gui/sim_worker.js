@@ -662,6 +662,13 @@ self.onmessage = function(e) {
             let arrivalTime = 0;
             const isAgentic = payload.config.trafficProfile === 'Agentic';
 
+            // Helper for M/G/c heavy-tail sampling
+            const samplePareto = (minVal, maxVal, alpha) => {
+                const u = rng();
+                const val = minVal / Math.pow(1 - u, 1 / alpha);
+                return Math.floor(Math.min(val, maxVal));
+            };
+
             for (let i = 0; i < wl.numRequests; i++) {
                 let promptLen, genLen, trafficType;
 
@@ -669,12 +676,14 @@ self.onmessage = function(e) {
                     // Sample a traffic type based on weights
                     trafficType = sampleTrafficType(rng);
                     const tt = TRAFFIC_TYPES[trafficType];
-                    promptLen = Math.floor(rng() * (tt.promptRange[1] - tt.promptRange[0] + 1)) + tt.promptRange[0];
-                    genLen = Math.floor(rng() * (tt.genRange[1] - tt.genRange[0] + 1)) + tt.genRange[0];
+                    // Agentic traffic service times are heavy-tailed (M/G/c queues)
+                    promptLen = samplePareto(tt.promptRange[0], tt.promptRange[1], 1.5);
+                    genLen = samplePareto(tt.genRange[0], tt.genRange[1], 1.2);
                     // Bursty arrival: scale inter-arrival by burstiness factor
                     arrivalTime += -Math.log(1 - rng()) / (wl.arrivalRate * tt.burstiness);
                 } else {
                     trafficType = 'SimpleQuery';
+                    // Standard LLM traffic uses Uniform/M/M/c-like behavior
                     promptLen = Math.floor(rng() * (wl.promptMax - wl.promptMin + 1)) + wl.promptMin;
                     genLen = Math.floor(rng() * (wl.genMax - wl.genMin + 1)) + wl.genMin;
                     arrivalTime += -Math.log(1 - rng()) / wl.arrivalRate;

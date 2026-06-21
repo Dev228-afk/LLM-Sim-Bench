@@ -99,6 +99,7 @@ def generate_workload(
     gen_max: int,
     arrival_rate: float,
     seed: int = 42,
+    is_agentic: bool = False,
 ) -> list[tuple[int, int, int, float]]:
     """
     Generate a synthetic workload.
@@ -107,8 +108,19 @@ def generate_workload(
         List of (id, prompt_length, generation_length, arrival_time) tuples.
     """
     rng = np.random.default_rng(seed)
-    prompt_lens = rng.integers(prompt_min, prompt_max + 1, size=num_requests)
-    gen_lens = rng.integers(gen_min, gen_max + 1, size=num_requests)
+    
+    if is_agentic:
+        # Agentic workflows exhibit heavy-tailed distributions (M/G/c queues).
+        # We model this using a bounded Pareto distribution.
+        pareto_prompts = rng.pareto(1.5, size=num_requests)
+        prompt_lens = np.clip(np.floor(prompt_min * (1 + pareto_prompts)), prompt_min, prompt_max)
+        
+        pareto_gens = rng.pareto(1.2, size=num_requests)
+        gen_lens = np.clip(np.floor(gen_min * (1 + pareto_gens)), gen_min, gen_max)
+    else:
+        # Standard baseline (Uniform / M/M/c behavior)
+        prompt_lens = rng.integers(prompt_min, prompt_max + 1, size=num_requests)
+        gen_lens = rng.integers(gen_min, gen_max + 1, size=num_requests)
 
     # Poisson inter-arrival times
     inter_arrivals = rng.exponential(1.0 / arrival_rate, size=num_requests)
@@ -224,6 +236,7 @@ def run_sweep(config: dict[str, Any], quick: bool = False) -> pd.DataFrame:
         gen_max=wl_cfg["generation_length_max"],
         arrival_rate=wl_cfg["arrival_rate_rps"],
         seed=wl_cfg.get("seed", 42),
+        is_agentic=(wl_cfg.get("traffic_profile", "Agentic") == "Agentic"),
     )
 
     all_results = []
