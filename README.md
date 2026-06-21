@@ -13,7 +13,7 @@ The simulator models the complex, non-linear request lifecycles of agentic AI wo
 ## 🚀 Key Highlights & Academic Foundations
 
 * **High-Throughput C++20 Engine**: Tracks **50,000+ state transitions per second**.
-* **Mathematical Validation**: Simulates queue depths, scheduling latencies, and resource contention with **within 8% accuracy** of open-source production baselines, validated using **Erlang-C** and **M/M/k** queuing theory formulations.
+* **Mathematical Validation**: Simulates queue depths, scheduling latencies, and resource contention with **within 8% accuracy** of open-source production baselines. Validated against **M/G/c** queueing formulations for heavy-tailed, high-variance agentic workflows, and baseline **Erlang-C (M/M/c)** models for standard uniform LLM traffic.
 * **Agentic Workload Characterization**: Models non-linear structural traffic paths—modeling transition matrices between compute-bound Prefill stages and memory-bound Decode loops, routing dependencies, and KV-cache memory pressure points.
 * **Pluggable Architecture**:
   * **Schedulers**: First-Come-First-Serve (FCFS), Weighted Priority Scheduling, and Continuous Batching.
