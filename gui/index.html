@@ -1,364 +1,626 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>LLM Sim Bench — Real-Time Inference Simulator</title>
-    <meta name="description" content="High-fidelity real-time behavioral simulator for LLM inference serving systems with interactive parameter control and live visualization.">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css">
-</head>
-<body>
+    <meta
+      name="description"
+      content="High-fidelity real-time behavioral simulator for LLM inference serving systems with interactive parameter control and live visualization."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
     <!-- ═══ Top Bar ═══ -->
     <header id="topbar">
-        <div class="topbar-left">
-            <div class="logo">
-                <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-                    <rect x="2" y="2" width="24" height="24" rx="6" stroke="url(#lg)" stroke-width="2.5"/>
-                    <path d="M8 14h12M14 8v12" stroke="url(#lg)" stroke-width="2" stroke-linecap="round"/>
-                    <circle cx="14" cy="14" r="3" fill="url(#lg)" opacity="0.6"/>
-                    <defs><linearGradient id="lg" x1="0" y1="0" x2="28" y2="28"><stop stop-color="#818cf8"/><stop offset="1" stop-color="#c084fc"/></linearGradient></defs>
-                </svg>
-                <span class="logo-text">LLM Sim Bench</span>
-            </div>
-            <span class="version-badge">v0.2.0</span>
+      <div class="topbar-left">
+        <div class="logo">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+            <rect
+              x="2"
+              y="2"
+              width="24"
+              height="24"
+              rx="6"
+              stroke="url(#lg)"
+              stroke-width="2.5"
+            />
+            <path
+              d="M8 14h12M14 8v12"
+              stroke="url(#lg)"
+              stroke-width="2"
+              stroke-linecap="round"
+            />
+            <circle cx="14" cy="14" r="3" fill="url(#lg)" opacity="0.6" />
+            <defs>
+              <linearGradient id="lg" x1="0" y1="0" x2="28" y2="28">
+                <stop stop-color="#818cf8" />
+                <stop offset="1" stop-color="#c084fc" />
+              </linearGradient>
+            </defs>
+          </svg>
+          <span class="logo-text">LLM Sim Bench</span>
         </div>
-        <div class="topbar-center">
-            <div id="sim-status" class="status-pill status-idle">
-                <span class="status-dot"></span>
-                <span class="status-text">Idle</span>
-            </div>
-            <div id="sim-time-display" class="time-display">t = 0.0000s</div>
+        <span class="version-badge">v0.2.0</span>
+      </div>
+      <div class="topbar-center">
+        <div id="sim-status" class="status-pill status-idle">
+          <span class="status-dot"></span>
+          <span class="status-text">Idle</span>
         </div>
-        <div class="topbar-right">
-            <button id="btn-theme-toggle" class="btn btn-secondary btn-icon" title="Toggle Theme" style="margin-right: 4px;">
-                <!-- Sun Icon (visible in dark mode, switches to light) -->
-                <svg id="theme-icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="12" cy="12" r="5"></circle>
-                    <line x1="12" y1="1" x2="12" y2="3"></line>
-                    <line x1="12" y1="21" x2="12" y2="23"></line>
-                    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
-                    <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
-                    <line x1="1" y1="12" x2="3" y2="12"></line>
-                    <line x1="21" y1="12" x2="23" y2="12"></line>
-                    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
-                    <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
-                </svg>
-                <!-- Moon Icon (visible in light mode, switches to dark) -->
-                <svg id="theme-icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
-                </svg>
-            </button>
-            <div class="controls-group">
-                <button id="btn-init" class="btn btn-secondary" title="Initialize Simulation">
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-                    Init
-                </button>
-                <button id="btn-play" class="btn btn-primary" disabled title="Start Simulation">
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 3l10 5-10 5V3z" fill="currentColor"/></svg>
-                    Run
-                </button>
-                <button id="btn-pause" class="btn btn-secondary" disabled title="Pause">
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="3" y="2" width="4" height="12" rx="1" fill="currentColor"/><rect x="9" y="2" width="4" height="12" rx="1" fill="currentColor"/></svg>
-                    Pause
-                </button>
-                <button id="btn-step" class="btn btn-secondary" disabled title="Single Step">
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 3l6 5-6 5V3z" fill="currentColor"/><rect x="11" y="3" width="2" height="10" rx="0.5" fill="currentColor"/></svg>
-                    Step
-                </button>
-                <button id="btn-fast" class="btn btn-secondary" disabled title="Run to Completion">
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 3l5 5-5 5V3z" fill="currentColor"/><path d="M8 3l5 5-5 5V3z" fill="currentColor"/></svg>
-                    Fast
-                </button>
-            </div>
+        <div id="sim-time-display" class="time-display">t = 0.0000s</div>
+        <div id="sim-progress-display" class="progress-display" style="margin-left: 16px; font-weight: 600;">Completed: 0 / 0</div>
+      </div>
+      <div class="topbar-right">
+        <button
+          id="btn-theme-toggle"
+          class="btn btn-secondary btn-icon"
+          title="Toggle Theme"
+          style="margin-right: 4px"
+        >
+          <!-- Sun Icon (visible in dark mode, switches to light) -->
+          <svg
+            id="theme-icon-sun"
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+          <!-- Moon Icon (visible in light mode, switches to dark) -->
+          <svg
+            id="theme-icon-moon"
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+        </button>
+        <div class="controls-group">
+          <button
+            id="btn-init"
+            class="btn btn-secondary"
+            title="Initialize Simulation"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path
+                d="M2 4h12M2 8h12M2 12h12"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+              />
+            </svg>
+            Init
+          </button>
+          <button
+            id="btn-play"
+            class="btn btn-primary"
+            disabled
+            title="Start Simulation"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M4 3l10 5-10 5V3z" fill="currentColor" />
+            </svg>
+            Run
+          </button>
+          <button
+            id="btn-pause"
+            class="btn btn-secondary"
+            disabled
+            title="Pause"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <rect
+                x="3"
+                y="2"
+                width="4"
+                height="12"
+                rx="1"
+                fill="currentColor"
+              />
+              <rect
+                x="9"
+                y="2"
+                width="4"
+                height="12"
+                rx="1"
+                fill="currentColor"
+              />
+            </svg>
+            Pause
+          </button>
+          <button
+            id="btn-step"
+            class="btn btn-secondary"
+            disabled
+            title="Single Step"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M4 3l6 5-6 5V3z" fill="currentColor" />
+              <rect
+                x="11"
+                y="3"
+                width="2"
+                height="10"
+                rx="0.5"
+                fill="currentColor"
+              />
+            </svg>
+            Step
+          </button>
+          <button
+            id="btn-fast"
+            class="btn btn-secondary"
+            disabled
+            title="Run to Completion"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M2 3l5 5-5 5V3z" fill="currentColor" />
+              <path d="M8 3l5 5-5 5V3z" fill="currentColor" />
+            </svg>
+            Fast
+          </button>
         </div>
+      </div>
     </header>
 
     <!-- ═══ Main Layout: Sidebar + Content ═══ -->
     <div id="app-layout">
-        <!-- ── Left: Configuration Panel ── -->
-        <aside id="config-panel">
-            <div class="panel-header">
-                <h2>Configuration</h2>
-                <button id="btn-reset-config" class="btn-icon" title="Reset to defaults">
-                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 7a6 6 0 1011.2-3M12.2 1v3h-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                </button>
+      <!-- ── Left: Configuration Panel ── -->
+      <aside id="config-panel">
+        <div class="panel-header">
+          <h2>Configuration</h2>
+          <button
+            id="btn-reset-config"
+            class="btn-icon"
+            title="Reset to defaults"
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path
+                d="M1 7a6 6 0 1011.2-3M12.2 1v3h-3"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </button>
+        </div>
+
+        <!-- Traffic Profile -->
+        <section class="config-section">
+          <h3 class="section-title">Traffic Profile</h3>
+          <div class="field">
+            <label for="traffic-profile">Workload Type</label>
+            <select id="traffic-profile">
+              <option value="Standard">Standard LLM</option>
+              <option value="Agentic" selected>Agentic Pipeline</option>
+            </select>
+            <div class="field-hint" id="traffic-hint">
+              Mixes 6 traffic classes: SimpleQuery, ToolCall, Multi-Step CoT,
+              Recursive Loop, Multi-RAG, CodeGen
             </div>
+          </div>
+        </section>
 
-            <!-- Traffic Profile -->
-            <section class="config-section">
-                <h3 class="section-title">Traffic Profile</h3>
-                <div class="field">
-                    <label for="traffic-profile">Workload Type</label>
-                    <select id="traffic-profile">
-                        <option value="Standard">Standard LLM</option>
-                        <option value="Agentic" selected>Agentic Pipeline</option>
-                    </select>
-                    <div class="field-hint" id="traffic-hint">Mixes 6 traffic classes: SimpleQuery, ToolCall, Multi-Step CoT, Recursive Loop, Multi-RAG, CodeGen</div>
-                </div>
-            </section>
+        <!-- Model -->
+        <section class="config-section">
+          <h3 class="section-title">Model</h3>
+          <div class="field">
+            <label for="model-params">Parameters (B)</label>
+            <input
+              type="number"
+              id="model-params"
+              value="7.0"
+              min="0.1"
+              max="1000"
+              step="0.5"
+            />
+          </div>
+        </section>
 
-            <!-- Model -->
-            <section class="config-section">
-                <h3 class="section-title">Model</h3>
-                <div class="field">
-                    <label for="model-params">Parameters (B)</label>
-                    <input type="number" id="model-params" value="7.0" min="0.1" max="1000" step="0.5">
-                </div>
-            </section>
+        <!-- Hardware -->
+        <section class="config-section">
+          <h3 class="section-title">Hardware — Prefill</h3>
+          <div class="field">
+            <label for="prefill-hw">Profile</label>
+            <select id="prefill-hw">
+              <option value="H100_SXM" selected>H100 SXM (989 TFLOPS)</option>
+              <option value="A100_80GB">A100 80GB (312 TFLOPS)</option>
+              <option value="L4">L4 24GB (121 TFLOPS)</option>
+            </select>
+          </div>
+          <h3 class="section-title" style="margin-top: 12px">
+            Hardware — Decode
+          </h3>
+          <div class="field">
+            <label for="decode-hw">Profile</label>
+            <select id="decode-hw">
+              <option value="H100_SXM">H100 SXM (3350 GB/s)</option>
+              <option value="A100_80GB">A100 80GB (2039 GB/s)</option>
+              <option value="L4" selected>L4 24GB (300 GB/s)</option>
+            </select>
+          </div>
+        </section>
 
-            <!-- Hardware -->
-            <section class="config-section">
-                <h3 class="section-title">Hardware — Prefill</h3>
-                <div class="field">
-                    <label for="prefill-hw">Profile</label>
-                    <select id="prefill-hw">
-                        <option value="H100_SXM" selected>H100 SXM (989 TFLOPS)</option>
-                        <option value="A100_80GB">A100 80GB (312 TFLOPS)</option>
-                        <option value="L4">L4 24GB (121 TFLOPS)</option>
-                    </select>
-                </div>
-                <h3 class="section-title" style="margin-top:12px">Hardware — Decode</h3>
-                <div class="field">
-                    <label for="decode-hw">Profile</label>
-                    <select id="decode-hw">
-                        <option value="H100_SXM">H100 SXM (3350 GB/s)</option>
-                        <option value="A100_80GB">A100 80GB (2039 GB/s)</option>
-                        <option value="L4" selected>L4 24GB (300 GB/s)</option>
-                    </select>
-                </div>
-            </section>
+        <!-- KV Cache -->
+        <section class="config-section">
+          <h3 class="section-title">KV Cache</h3>
+          <div class="field">
+            <label for="kv-capacity">Capacity (tokens)</label>
+            <input
+              type="number"
+              id="kv-capacity"
+              value="1024"
+              min="16"
+              max="1000000"
+              step="256"
+            />
+          </div>
+          <div class="field">
+            <label for="kv-transfer">Transfer Latency (ms)</label>
+            <input
+              type="number"
+              id="kv-transfer"
+              value="0.5"
+              min="0"
+              max="100"
+              step="0.1"
+            />
+          </div>
+          <div class="field">
+            <label for="eviction-policy">Eviction Policy</label>
+            <select id="eviction-policy">
+              <option value="None">None (Unlimited)</option>
+              <option value="Random">Random</option>
+              <option value="LRU" selected>LRU</option>
+              <option value="AttentionGuided">Attention-Guided</option>
+            </select>
+          </div>
+        </section>
 
-            <!-- KV Cache -->
-            <section class="config-section">
-                <h3 class="section-title">KV Cache</h3>
-                <div class="field">
-                    <label for="kv-capacity">Capacity (tokens)</label>
-                    <input type="number" id="kv-capacity" value="1024" min="16" max="1000000" step="256">
-                </div>
-                <div class="field">
-                    <label for="kv-transfer">Transfer Latency (ms)</label>
-                    <input type="number" id="kv-transfer" value="0.5" min="0" max="100" step="0.1">
-                </div>
-                <div class="field">
-                    <label for="eviction-policy">Eviction Policy</label>
-                    <select id="eviction-policy">
-                        <option value="None">None (Unlimited)</option>
-                        <option value="Random">Random</option>
-                        <option value="LRU" selected>LRU</option>
-                        <option value="AttentionGuided">Attention-Guided</option>
-                    </select>
-                </div>
-            </section>
+        <!-- Scheduler -->
+        <section class="config-section">
+          <h3 class="section-title">Scheduler</h3>
+          <div class="field">
+            <label for="scheduler-type">Policy</label>
+            <select id="scheduler-type">
+              <option value="FCFS" selected>FCFS</option>
+              <option value="Priority">Priority</option>
+              <option value="ContinuousBatching">Continuous Batching</option>
+            </select>
+          </div>
+          <div class="field priority-field" style="display: none">
+            <label for="priority-pw">Prompt Weight</label>
+            <input
+              type="number"
+              id="priority-pw"
+              value="0.1"
+              min="0"
+              max="10"
+              step="0.05"
+            />
+          </div>
+          <div class="field priority-field" style="display: none">
+            <label for="priority-gw">Generation Weight</label>
+            <input
+              type="number"
+              id="priority-gw"
+              value="0.5"
+              min="0"
+              max="10"
+              step="0.05"
+            />
+          </div>
+          <div class="field batch-field" style="display: none">
+            <label for="max-batch">Max Batch Size</label>
+            <input
+              type="number"
+              id="max-batch"
+              value="8"
+              min="1"
+              max="128"
+              step="1"
+            />
+          </div>
+        </section>
 
-            <!-- Scheduler -->
-            <section class="config-section">
-                <h3 class="section-title">Scheduler</h3>
-                <div class="field">
-                    <label for="scheduler-type">Policy</label>
-                    <select id="scheduler-type">
-                        <option value="FCFS" selected>FCFS</option>
-                        <option value="Priority">Priority</option>
-                        <option value="ContinuousBatching">Continuous Batching</option>
-                    </select>
-                </div>
-                <div class="field priority-field" style="display:none">
-                    <label for="priority-pw">Prompt Weight</label>
-                    <input type="number" id="priority-pw" value="0.1" min="0" max="10" step="0.05">
-                </div>
-                <div class="field priority-field" style="display:none">
-                    <label for="priority-gw">Generation Weight</label>
-                    <input type="number" id="priority-gw" value="0.5" min="0" max="10" step="0.05">
-                </div>
-                <div class="field batch-field" style="display:none">
-                    <label for="max-batch">Max Batch Size</label>
-                    <input type="number" id="max-batch" value="8" min="1" max="128" step="1">
-                </div>
-            </section>
-
-            <!-- Workload -->
-            <section class="config-section">
-                <h3 class="section-title">Workload</h3>
-                <div class="field">
-                    <label for="num-requests">Requests</label>
-                    <input type="number" id="num-requests" value="50" min="1" max="10000" step="10">
-                </div>
-                <div class="field-row">
-                    <div class="field half">
-                        <label for="prompt-min">Prompt Min</label>
-                        <input type="number" id="prompt-min" value="64" min="1" max="100000" step="16">
-                    </div>
-                    <div class="field half">
-                        <label for="prompt-max">Prompt Max</label>
-                        <input type="number" id="prompt-max" value="2048" min="1" max="100000" step="64">
-                    </div>
-                </div>
-                <div class="field-row">
-                    <div class="field half">
-                        <label for="gen-min">Gen Min</label>
-                        <input type="number" id="gen-min" value="16" min="1" max="100000" step="8">
-                    </div>
-                    <div class="field half">
-                        <label for="gen-max">Gen Max</label>
-                        <input type="number" id="gen-max" value="512" min="1" max="100000" step="32">
-                    </div>
-                </div>
-                <div class="field">
-                    <label for="arrival-rate">Arrival Rate (req/s)</label>
-                    <input type="number" id="arrival-rate" value="10" min="0.1" max="10000" step="1">
-                </div>
-                <div class="field">
-                    <label for="seed">Random Seed</label>
-                    <input type="number" id="seed" value="42" min="0" max="999999">
-                </div>
-            </section>
-
-            <!-- Simulation Speed -->
-            <section class="config-section">
-                <h3 class="section-title">Simulation Speed</h3>
-                <div class="field">
-                    <label for="step-batch">Events / Frame</label>
-                    <input type="range" id="step-batch" min="1" max="500" value="50">
-                    <span id="step-batch-val" class="range-val">50</span>
-                </div>
-            </section>
-        </aside>
-
-        <!-- ── Right: Dashboard ── -->
-        <main id="dashboard">
-            <!-- KPI Cards Row -->
-            <div id="kpi-row">
-                <div class="kpi-card" id="kpi-completed">
-                    <div class="kpi-label">Completed</div>
-                    <div class="kpi-value" id="val-completed">0 / 0</div>
-                    <div class="kpi-sub" id="sub-completed">—</div>
-                </div>
-                <div class="kpi-card" id="kpi-throughput">
-                    <div class="kpi-label">Throughput</div>
-                    <div class="kpi-value" id="val-throughput">0.0</div>
-                    <div class="kpi-sub">tok/s</div>
-                </div>
-                <div class="kpi-card" id="kpi-avg-lat">
-                    <div class="kpi-label">Avg Latency</div>
-                    <div class="kpi-value" id="val-avg-lat">0.00</div>
-                    <div class="kpi-sub">seconds</div>
-                </div>
-                <div class="kpi-card" id="kpi-p95">
-                    <div class="kpi-label">p95 Latency</div>
-                    <div class="kpi-value" id="val-p95">0.00</div>
-                    <div class="kpi-sub">seconds</div>
-                </div>
-                <div class="kpi-card" id="kpi-cache">
-                    <div class="kpi-label">Cache Hit Rate</div>
-                    <div class="kpi-value" id="val-cache">0.0%</div>
-                    <div class="kpi-sub" id="sub-cache">0 hits / 0 misses</div>
-                </div>
-                <div class="kpi-card" id="kpi-queue">
-                    <div class="kpi-label">Queue Depth</div>
-                    <div class="kpi-value" id="val-queue">0</div>
-                    <div class="kpi-sub" id="sub-queue">peak: 0</div>
-                </div>
+        <!-- Workload -->
+        <section class="config-section">
+          <h3 class="section-title">Workload</h3>
+          <div class="field">
+            <label for="num-requests">Requests</label>
+            <input
+              type="number"
+              id="num-requests"
+              value="50"
+              min="1"
+              max="10000"
+              step="10"
+            />
+          </div>
+          <div class="field-row">
+            <div class="field half">
+              <label for="prompt-min">Prompt Min</label>
+              <input
+                type="number"
+                id="prompt-min"
+                value="64"
+                min="1"
+                max="100000"
+                step="16"
+              />
             </div>
-
-            <!-- Charts Grid -->
-            <div id="charts-grid">
-                <div class="chart-card" id="chart-latency-card">
-                    <div class="chart-header">
-                        <h3>Per-Request E2E Latency <span class="info-tip" title="Each dot is one completed request. Color encodes the traffic type (ToolCall, CoT, RAG, etc). The upward trend reveals head-of-line blocking under FCFS scheduling — later requests wait longer in queue.">ⓘ</span></h3>
-                        <span class="chart-badge" id="latency-count">0 requests</span>
-                    </div>
-                    <div class="chart-wrap"><canvas id="chart-latency"></canvas></div>
-                </div>
-                <div class="chart-card" id="chart-throughput-card">
-                    <div class="chart-header">
-                        <h3>Cumulative Throughput <span class="info-tip" title="Total generated tokens over time. The slope represents system throughput (tok/s). A steeper slope indicates better GPU utilization. Plateaus indicate prefill bottlenecks.">ⓘ</span></h3>
-                        <span class="chart-badge" id="throughput-total">0 tokens</span>
-                    </div>
-                    <div class="chart-wrap"><canvas id="chart-throughput"></canvas></div>
-                </div>
-                <div class="chart-card" id="chart-phase-card">
-                    <div class="chart-header">
-                        <h3>Phase Breakdown <span class="info-tip" title="Stacked bar showing Prefill (compute-bound, ∝ TFLOPS) vs Decode (bandwidth-bound, ∝ HBM BW) time per request. This visualizes the runtime transition matrix between the two phases.">ⓘ</span></h3>
-                        <span class="chart-badge" id="phase-info">prefill vs decode</span>
-                    </div>
-                    <div class="chart-wrap"><canvas id="chart-phase"></canvas></div>
-                </div>
-                <div class="chart-card" id="chart-cdf-card">
-                    <div class="chart-header">
-                        <h3>Latency CDF <span class="info-tip" title="Cumulative Distribution Function of end-to-end latency with p50/p95/p99 tail-latency markers. p95/p99 are critical SLA metrics for distributed system scheduling bottleneck identification.">ⓘ</span></h3>
-                        <span class="chart-badge" id="cdf-info">percentiles</span>
-                    </div>
-                    <div class="chart-wrap"><canvas id="chart-cdf"></canvas></div>
-                </div>
-                <div class="chart-card" id="chart-roofline-card">
-                    <div class="chart-header">
-                        <h3>Roofline Analysis <span class="info-tip" title="Roofline model: maps each request's operational intensity (FLOP/byte) against achieved throughput. Requests below the roofline ceiling are under-utilizing hardware. Prefill-heavy requests cluster right (compute-bound); decode-heavy cluster left (memory-bound).">ⓘ</span></h3>
-                        <span class="chart-badge" id="roofline-info">FLOP/byte vs tok/s</span>
-                    </div>
-                    <div class="chart-wrap"><canvas id="chart-roofline"></canvas></div>
-                </div>
-                <div class="chart-card" id="chart-cluster-card">
-                    <div class="chart-header">
-                        <h3>K-Means Traffic Clustering <span class="info-tip" title="K-Means (k=4) clusters requests into hardware-bound profiles based on [prompt_len, gen_len, latency, operational_intensity]. Identifies 4 workload archetypes: compute-bound, memory-bound, balanced, and latency-sensitive.">ⓘ</span></h3>
-                        <span class="chart-badge" id="cluster-info">4 profiles</span>
-                    </div>
-                    <div class="chart-wrap"><canvas id="chart-cluster"></canvas></div>
-                </div>
-                <div class="chart-card" id="chart-queue-card">
-                    <div class="chart-header">
-                        <h3>Queue Depth Timeline <span class="info-tip" title="Tracks pending (awaiting prefill), decode-waiting, and active-decode queue depths over simulation time. Models M/M/k queueing dynamics. Peaks indicate resource contention and scheduling bottlenecks.">ⓘ</span></h3>
-                        <span class="chart-badge" id="queue-info">queueing dynamics</span>
-                    </div>
-                    <div class="chart-wrap"><canvas id="chart-queue"></canvas></div>
-                </div>
-                <div class="chart-card" id="chart-traffic-card">
-                    <div class="chart-header">
-                        <h3>Traffic Mix <span class="info-tip" title="Distribution of agentic traffic classes. Real datacenter traffic is heterogeneous: tool calls are bursty and lightweight, while CoT/RAG queries are rare but resource-intensive. This drives non-linear structural traffic behavior.">ⓘ</span></h3>
-                        <span class="chart-badge" id="traffic-info">6 classes</span>
-                    </div>
-                    <div class="chart-wrap"><canvas id="chart-traffic"></canvas></div>
-                </div>
+            <div class="field half">
+              <label for="prompt-max">Prompt Max</label>
+              <input
+                type="number"
+                id="prompt-max"
+                value="2048"
+                min="1"
+                max="100000"
+                step="64"
+              />
             </div>
-
-            <!-- Engine Status Bar -->
-            <div id="engine-status">
-                <div class="engine-indicator">
-                    <span class="engine-label">Prefill Engine</span>
-                    <span class="engine-dot" id="prefill-dot"></span>
-                    <span class="engine-state" id="prefill-state">Idle</span>
-                </div>
-                <div class="engine-indicator">
-                    <span class="engine-label">Decode Engine</span>
-                    <span class="engine-dot" id="decode-dot"></span>
-                    <span class="engine-state" id="decode-state">Idle</span>
-                </div>
-                <div class="engine-indicator">
-                    <span class="engine-label">Decode Batch</span>
-                    <span class="engine-state" id="decode-batch-size">0</span>
-                </div>
-                <div class="engine-indicator">
-                    <span class="engine-label">Events Queue</span>
-                    <span class="engine-state" id="events-remaining">0</span>
-                </div>
-                <div class="engine-indicator">
-                    <span class="engine-label">Decode Waiting</span>
-                    <span class="engine-state" id="decode-waiting">0</span>
-                </div>
-                <div class="engine-indicator">
-                    <span class="engine-label">Scheduler</span>
-                    <span class="engine-state" id="active-scheduler">FCFS</span>
-                </div>
-                <div class="engine-indicator">
-                    <span class="engine-label">Eviction</span>
-                    <span class="engine-state" id="active-eviction">LRU</span>
-                </div>
+          </div>
+          <div class="field-row">
+            <div class="field half">
+              <label for="gen-min">Gen Min</label>
+              <input
+                type="number"
+                id="gen-min"
+                value="16"
+                min="1"
+                max="100000"
+                step="8"
+              />
             </div>
-        </main>
+            <div class="field half">
+              <label for="gen-max">Gen Max</label>
+              <input
+                type="number"
+                id="gen-max"
+                value="512"
+                min="1"
+                max="100000"
+                step="32"
+              />
+            </div>
+          </div>
+          <div class="field">
+            <label for="arrival-rate">Arrival Rate (req/s)</label>
+            <input
+              type="number"
+              id="arrival-rate"
+              value="10"
+              min="0.1"
+              max="10000"
+              step="1"
+            />
+          </div>
+          <div class="field">
+            <label for="seed">Random Seed</label>
+            <input type="number" id="seed" value="42" min="0" max="999999" />
+          </div>
+        </section>
+
+        <!-- Simulation Speed -->
+        <section class="config-section">
+          <h3 class="section-title">Simulation Speed</h3>
+          <div class="field">
+            <label for="step-batch">Events / Frame</label>
+            <input type="range" id="step-batch" min="1" max="500" value="50" />
+            <span id="step-batch-val" class="range-val">50</span>
+          </div>
+        </section>
+      </aside>
+
+      <!-- ── Right: Dashboard ── -->
+      <main id="dashboard">
+        <!-- Charts Grid -->
+        <div id="charts-grid">
+          <div
+            class="chart-card"
+            id="chart-tradeoff-card"
+            style="grid-column: 1 / -1"
+          >
+            <div class="chart-header">
+              <h3>
+                Throughput & Tail Latency Trade-off
+                <span
+                  class="info-tip"
+                  title="Dual-axis comparison of Throughput (tok/s) and P95 Tail Latency across different scheduling policies. Demonstrates the collapse of tail latency under Continuous Batching."
+                  >ⓘ</span
+                >
+              </h3>
+              <span class="chart-badge" id="tradeoff-info"
+                >Scheduler Comparison</span
+              >
+            </div>
+            <div class="chart-wrap"><canvas id="chart-tradeoff"></canvas></div>
+          </div>
+          <div class="chart-card" id="chart-latency-card">
+            <div class="chart-header">
+              <h3>
+                Schedulers Queue Evacuation Curve
+                <span
+                  class="info-tip"
+                  title="Time vs Cumulative Completed Requests. FCFS shows a shallow evacuation curve due to head-of-line blocking. Continuous Batching shows a steep, rapid evacuation."
+                  >ⓘ</span
+                >
+              </h3>
+              <span class="chart-badge" id="latency-count">0 requests</span>
+            </div>
+            <div class="chart-wrap"><canvas id="chart-latency"></canvas></div>
+          </div>
+          <div class="chart-card" id="chart-throughput-card">
+            <div class="chart-header">
+              <h3>
+                Cumulative Throughput
+                <span
+                  class="info-tip"
+                  title="Total generated tokens over time. The slope represents system throughput (tok/s). A steeper slope indicates better GPU utilization. Plateaus indicate prefill bottlenecks."
+                  >ⓘ</span
+                >
+              </h3>
+              <span class="chart-badge" id="throughput-total">0 tokens</span>
+            </div>
+            <div class="chart-wrap">
+              <canvas id="chart-throughput"></canvas>
+            </div>
+          </div>
+          <div class="chart-card" id="chart-phase-card">
+            <div class="chart-header">
+              <h3>
+                Hardware Saliency Analysis
+                <span
+                  class="info-tip"
+                  title="Stacked 100% horizontal bar chart isolating the memory-bound decoding bottleneck from compute-bound prefill and transfer overheads."
+                  >ⓘ</span
+                >
+              </h3>
+              <span class="chart-badge" id="phase-info">execution profile</span>
+            </div>
+            <div class="chart-wrap"><canvas id="chart-phase"></canvas></div>
+          </div>
+          <div class="chart-card" id="chart-cdf-card">
+            <div class="chart-header">
+              <h3>
+                Latency Distribution Comparison
+                <span
+                  class="info-tip"
+                  title="Overlaid Cumulative Distribution Function of end-to-end latency with P50 and P95 markers. Compares variance across runs."
+                  >ⓘ</span
+                >
+              </h3>
+              <span class="chart-badge" id="cdf-info">percentiles</span>
+            </div>
+            <div class="chart-wrap"><canvas id="chart-cdf"></canvas></div>
+          </div>
+          <div class="chart-card" id="chart-roofline-card">
+            <div class="chart-header">
+              <h3>
+                Roofline Analysis
+                <span
+                  class="info-tip"
+                  title="Roofline model: maps each request's operational intensity (FLOP/byte) against achieved throughput. Requests below the roofline ceiling are under-utilizing hardware. Prefill-heavy requests cluster right (compute-bound); decode-heavy cluster left (memory-bound)."
+                  >ⓘ</span
+                >
+              </h3>
+              <span class="chart-badge" id="roofline-info"
+                >FLOP/byte vs tok/s</span
+              >
+            </div>
+            <div class="chart-wrap"><canvas id="chart-roofline"></canvas></div>
+          </div>
+          <div class="chart-card" id="chart-cluster-card">
+            <div class="chart-header">
+              <h3>
+                Workload Clustering & Characteristics
+                <span
+                  class="info-tip"
+                  title="Bivariate Scatter Plot with KDE density overlays. Maps prompt length vs generation length to visualize the dense core of the workload profile."
+                  >ⓘ</span
+                >
+              </h3>
+              <span class="chart-badge" id="cluster-info"
+                >bivariate density</span
+              >
+            </div>
+            <div class="chart-wrap"><canvas id="chart-cluster"></canvas></div>
+          </div>
+          <div class="chart-card" id="chart-queue-card">
+            <div class="chart-header">
+              <h3>
+                Queue Depth Timeline
+                <span
+                  class="info-tip"
+                  title="Tracks pending (awaiting prefill), decode-waiting, and active-decode queue depths over simulation time. Models M/M/k queueing dynamics. Peaks indicate resource contention and scheduling bottlenecks."
+                  >ⓘ</span
+                >
+              </h3>
+              <span class="chart-badge" id="queue-info">queueing dynamics</span>
+            </div>
+            <div class="chart-wrap"><canvas id="chart-queue"></canvas></div>
+          </div>
+          <div class="chart-card" id="chart-traffic-card">
+            <div class="chart-header">
+              <h3>
+                Traffic Mix
+                <span
+                  class="info-tip"
+                  title="Distribution of agentic traffic classes. Real datacenter traffic is heterogeneous: tool calls are bursty and lightweight, while CoT/RAG queries are rare but resource-intensive. This drives non-linear structural traffic behavior."
+                  >ⓘ</span
+                >
+              </h3>
+              <span class="chart-badge" id="traffic-info">6 classes</span>
+            </div>
+            <div class="chart-wrap"><canvas id="chart-traffic"></canvas></div>
+          </div>
+        </div>
+
+        <!-- Engine Status Bar -->
+        <div id="engine-status">
+          <div class="engine-indicator">
+            <span class="engine-label">Prefill Engine</span>
+            <span class="engine-dot" id="prefill-dot"></span>
+            <span class="engine-state" id="prefill-state">Idle</span>
+          </div>
+          <div class="engine-indicator">
+            <span class="engine-label">Decode Engine</span>
+            <span class="engine-dot" id="decode-dot"></span>
+            <span class="engine-state" id="decode-state">Idle</span>
+          </div>
+          <div class="engine-indicator">
+            <span class="engine-label">Decode Batch</span>
+            <span class="engine-state" id="decode-batch-size">0</span>
+          </div>
+          <div class="engine-indicator">
+            <span class="engine-label">Events Queue</span>
+            <span class="engine-state" id="events-remaining">0</span>
+          </div>
+          <div class="engine-indicator">
+            <span class="engine-label">Decode Waiting</span>
+            <span class="engine-state" id="decode-waiting">0</span>
+          </div>
+          <div class="engine-indicator">
+            <span class="engine-label">Scheduler</span>
+            <span class="engine-state" id="active-scheduler">FCFS</span>
+          </div>
+          <div class="engine-indicator">
+            <span class="engine-label">Eviction</span>
+            <span class="engine-state" id="active-eviction">LRU</span>
+          </div>
+        </div>
+      </main>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="app.js"></script>
-</body>
+  </body>
 </html>

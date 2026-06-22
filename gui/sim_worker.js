@@ -207,6 +207,7 @@ class KVCache {
             return true;
         }
         this.misses++;
+        this.entries.set(idx, { lastAccess: time, score: Math.random() * 0.3 + 0.1 });
         return false;
     }
 
@@ -215,9 +216,16 @@ class KVCache {
         this._evictIfNeeded();
     }
 
+    evictToCapacity() {
+        this._evictIfNeeded();
+    }
+
     _evictIfNeeded() {
-        while (this.entries.size > this.capacity) {
-            this.evictions++;
+        if (this.entries.size <= this.capacity) return;
+        const numToEvict = this.entries.size - this.capacity;
+        this.evictions += numToEvict;
+
+        if (numToEvict === 1) {
             if (this.evictionPolicy === 'LRU') {
                 let oldest = null, oldestKey = -1;
                 for (const [k, v] of this.entries) {
@@ -235,6 +243,33 @@ class KVCache {
                 this.entries.delete(keys[Math.floor(Math.random() * keys.length)]);
             } else {
                 this.entries.delete(this.entries.keys().next().value);
+            }
+            return;
+        }
+
+        if (this.evictionPolicy === 'LRU') {
+            const sorted = Array.from(this.entries.entries())
+                .sort((a, b) => a[1].lastAccess - b[1].lastAccess);
+            for (let i = 0; i < numToEvict; i++) {
+                this.entries.delete(sorted[i][0]);
+            }
+        } else if (this.evictionPolicy === 'AttentionGuided') {
+            const sorted = Array.from(this.entries.entries())
+                .sort((a, b) => a[1].score - b[1].score);
+            for (let i = 0; i < numToEvict; i++) {
+                this.entries.delete(sorted[i][0]);
+            }
+        } else if (this.evictionPolicy === 'Random') {
+            const keys = Array.from(this.entries.keys());
+            for (let i = 0; i < numToEvict; i++) {
+                const idx = Math.floor(Math.random() * keys.length);
+                this.entries.delete(keys[idx]);
+                keys.splice(idx, 1);
+            }
+        } else {
+            const keys = this.entries.keys();
+            for (let i = 0; i < numToEvict; i++) {
+                this.entries.delete(keys.next().value);
             }
         }
     }
@@ -475,7 +510,8 @@ class SimulationEngine {
                 for (let i = 0; i < totalTokensToAttend; i++) {
                     if (!cache.accessToken(i, this.currentTime)) misses++;
                 }
-                cache.addDecodeToken(totalTokensToAttend, this.currentTime);
+                cache.entries.set(totalTokensToAttend, { lastAccess: this.currentTime, score: Math.random() * 0.3 + 0.1 });
+                cache.evictToCapacity();
                 maxMissPenalty = Math.max(maxMissPenalty, misses * this.prefillTimePerToken);
             }
 

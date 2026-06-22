@@ -34,7 +34,7 @@ const TRAFFIC_LABELS = {
     CodeGen:        'Code Generation',
 };
 
-const CLUSTER_COLORS = ['#22d3ee', '#f59e0b', '#a78bfa', '#ef4444'];
+const CLUSTER_COLORS = ['#440154', '#31688e', '#35b779', '#fde725'];
 const CLUSTER_LABELS = ['Compute-Bound', 'Memory-Bound', 'Balanced', 'Latency-Sensitive'];
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -44,11 +44,13 @@ const CLUSTER_LABELS = ['Compute-Bound', 'Memory-Bound', 'Balanced', 'Latency-Se
 let worker = null;
 let charts = {};
 let lastSnapshot = null;
+let runHistory = {}; // Maps scheduler name to snap data
 
 const els = {
     statusPill: document.getElementById('sim-status'),
     statusText: document.querySelector('#sim-status .status-text'),
     timeDisplay: document.getElementById('sim-time-display'),
+    progressDisplay: document.getElementById('sim-progress-display'),
     btnInit: document.getElementById('btn-init'),
     btnPlay: document.getElementById('btn-play'),
     btnPause: document.getElementById('btn-pause'),
@@ -144,43 +146,56 @@ function init() {
     els.trafficProfile.dispatchEvent(new Event('change'));
 }
 
+const engFormatter = (v) => {
+    if (v === 0) return '0';
+    const abs = Math.abs(v);
+    if (abs >= 1e6) return (v / 1e6).toFixed(1) + 'M';
+    if (abs >= 1e3) return (v / 1e3).toFixed(1) + 'k';
+    return v % 1 !== 0 ? v.toFixed(1) : v;
+};
+
 function initCharts() {
     Chart.defaults.color = THEMES[currentTheme].textColor;
-    Chart.defaults.font.family = "'Inter', sans-serif";
-    Chart.defaults.font.size = 11;
+    Chart.defaults.font.family = "'Times New Roman', 'Computer Modern', serif";
+    Chart.defaults.font.size = 12;
 
-    // ── 1. Latency Scatter (colored by traffic type) ──
-    charts.latency = new Chart(document.getElementById('chart-latency'), {
-        type: 'scatter',
-        data: {
-            datasets: Object.entries(TRAFFIC_LABELS).map(([type, label]) => ({
-                label: label,
-                data: [],
-                backgroundColor: (TRAFFIC_COLORS[type] || '#888') + '99',
-                borderColor: TRAFFIC_COLORS[type] || '#888',
-                borderWidth: 1,
-                pointRadius: 3,
-                pointHoverRadius: 5,
-                parsing: false,
-                normalized: true,
-            }))
-        },
+    // ── 0. Tradeoff Chart ──
+    charts.tradeoff = new Chart(document.getElementById('chart-tradeoff'), {
+        type: 'bar',
+        data: { labels: [], datasets: [
+            { label: 'Throughput (tok/s)', data: [], yAxisID: 'y', backgroundColor: '#31688e', order: 2 },
+            { label: 'P95 Latency (s)', data: [], yAxisID: 'y1', type: 'line', borderColor: '#fde725', backgroundColor: '#fde725', borderWidth: 2, pointRadius: 5, pointStyle: 'rectRot', fill: false, order: 1 }
+        ]},
         options: {
             responsive: true, maintainAspectRatio: false, animation: false,
-            interaction: { mode: 'nearest', intersect: true },
+            plugins: { legend: { display: true, position: 'top', labels: { usePointStyle: true, font: { family: "'Times New Roman', serif" } } } },
+            scales: {
+                x: { grid: { color: THEMES[currentTheme].gridColor }, ticks: { font: TICK_FONT, color: THEMES[currentTheme].tickColor }, title: { display: true, text: 'Scheduler Policy', color: THEMES[currentTheme].axisTitleColor, font: AXIS_TITLE_FONT } },
+                y: { type: 'linear', position: 'left', grid: { color: THEMES[currentTheme].gridColor }, ticks: { font: TICK_FONT, color: THEMES[currentTheme].tickColor }, title: { display: true, text: 'Throughput (tok/s)', color: THEMES[currentTheme].axisTitleColor, font: AXIS_TITLE_FONT } },
+                y1: { type: 'logarithmic', min: 0.1, position: 'right', grid: { drawOnChartArea: false }, ticks: { font: TICK_FONT, color: THEMES[currentTheme].tickColor, callback: engFormatter }, title: { display: true, text: 'P95 Latency (seconds)', color: THEMES[currentTheme].axisTitleColor, font: AXIS_TITLE_FONT } }
+            }
+        }
+    });
+
+    // ── 1. Queue Evacuation (Time vs Cumulative Completed) ──
+    charts.latency = new Chart(document.getElementById('chart-latency'), {
+        type: 'line',
+        data: { datasets: [] }, // Populated dynamically in updateCharts
+        options: {
+            responsive: true, maintainAspectRatio: false, animation: false,
+            interaction: { mode: 'nearest', intersect: false },
             plugins: {
-                legend: { display: true, position: 'bottom', labels: { boxWidth: 8, font: { size: 9 }, padding: 6, usePointStyle: true, pointStyle: 'circle' } },
+                legend: { display: true, position: 'top', labels: { usePointStyle: true, font: { family: "'Times New Roman', serif" } } },
                 tooltip: {
                     ...getTooltipStyle(currentTheme),
                     callbacks: {
-                        title: (items) => `Request #${items[0].raw.id}`,
-                        label: (item) => `E2E: ${item.raw.y.toFixed(3)}s  |  Type: ${item.dataset.label}`
+                        label: (item) => `${item.dataset.label}: ${item.raw.y} completed at ${item.raw.x.toFixed(2)}s`
                     }
                 }
             },
             scales: {
-                x: { grid: { color: THEMES[currentTheme].gridColor }, ticks: { font: TICK_FONT, color: THEMES[currentTheme].tickColor }, title: { display: true, text: 'Request ID', color: THEMES[currentTheme].axisTitleColor, font: AXIS_TITLE_FONT } },
-                y: { grid: { color: THEMES[currentTheme].gridColor }, ticks: { font: TICK_FONT, color: THEMES[currentTheme].tickColor, callback: v => v.toFixed(0) + 's' }, title: { display: true, text: 'Latency (seconds)', color: THEMES[currentTheme].axisTitleColor, font: AXIS_TITLE_FONT }, beginAtZero: true }
+                x: { type: 'linear', grid: { color: THEMES[currentTheme].gridColor }, ticks: { font: TICK_FONT, color: THEMES[currentTheme].tickColor, callback: engFormatter }, title: { display: true, text: 'Simulation Time (seconds)', color: THEMES[currentTheme].axisTitleColor, font: AXIS_TITLE_FONT } },
+                y: { grid: { color: THEMES[currentTheme].gridColor }, ticks: { font: TICK_FONT, color: THEMES[currentTheme].tickColor }, title: { display: true, text: 'Completed Requests', color: THEMES[currentTheme].axisTitleColor, font: AXIS_TITLE_FONT }, beginAtZero: true }
             }
         }
     });
@@ -195,7 +210,7 @@ function initCharts() {
                 borderColor: '#818cf8',
                 backgroundColor: 'rgba(129, 140, 248, 0.08)',
                 fill: true,
-                tension: 0.3,
+                stepped: true,
                 pointRadius: 0,
                 borderWidth: 2,
                 parsing: false,
@@ -231,79 +246,48 @@ function initCharts() {
         }
     });
 
-    // ── 3. Phase Breakdown ──
+    // ── 3. Phase Breakdown (Saliency) ──
     charts.phase = new Chart(document.getElementById('chart-phase'), {
         type: 'bar',
-        data: { labels: [], datasets: [
-            { label: 'Prefill', data: [], backgroundColor: 'rgba(59, 130, 246, 0.8)', borderColor: '#3b82f6', borderWidth: 1 },
-            { label: 'Decode', data: [], backgroundColor: 'rgba(139, 92, 246, 0.8)', borderColor: '#8b5cf6', borderWidth: 1 },
+        data: { labels: ['% Total Time'], datasets: [
+            { label: 'Prefill Compute', data: [0], backgroundColor: '#440154', borderWidth: 1 },
+            { label: 'Decode Memory', data: [0], backgroundColor: '#31688e', borderWidth: 1 },
+            { label: 'Overhead', data: [0], backgroundColor: '#35b779', borderWidth: 1 },
         ]},
         options: {
             responsive: true, maintainAspectRatio: false, animation: false,
-            interaction: { mode: 'index', intersect: false },
-            plugins: {
-                legend: { display: true, position: 'top', labels: { boxWidth: 10, font: { size: 9 } } },
-                tooltip: {
-                    ...getTooltipStyle(currentTheme),
-                    callbacks: { title: (items) => `Request #${items[0].label}`, label: (item) => `${item.dataset.label}: ${item.raw.toFixed(3)}s` }
-                }
-            },
+            indexAxis: 'y',
+            plugins: { legend: { display: true, position: 'top', labels: { font: { family: "'Times New Roman', serif" } } } },
             scales: {
-                x: { stacked: true, grid: { display: false }, ticks: { font: TICK_FONT, color: THEMES[currentTheme].tickColor, maxTicksLimit: 15 }, title: { display: true, text: 'Request ID', color: THEMES[currentTheme].axisTitleColor, font: AXIS_TITLE_FONT } },
-                y: { stacked: true, grid: { color: THEMES[currentTheme].gridColor }, ticks: { font: TICK_FONT, color: THEMES[currentTheme].tickColor, callback: v => v.toFixed(0) + 's' }, title: { display: true, text: 'Time (seconds)', color: THEMES[currentTheme].axisTitleColor, font: AXIS_TITLE_FONT } }
+                x: { type: 'linear', stacked: true, min: 0, max: 100, ticks: { font: TICK_FONT, color: THEMES[currentTheme].tickColor, callback: v => v + '%' }, title: { display: true, text: 'Execution Time Breakdown', color: THEMES[currentTheme].axisTitleColor, font: AXIS_TITLE_FONT } },
+                y: { type: 'category', stacked: true, grid: { display: false }, ticks: { display: true } }
             }
         }
     });
 
-    // ── 4. CDF with percentile lines ──
+    // ── 4. Overlaid CDF ──
     charts.cdf = new Chart(document.getElementById('chart-cdf'), {
         type: 'line',
-        data: { datasets: [
-            { label: 'CDF', data: [], borderColor: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.08)', fill: true, tension: 0.15, pointRadius: 0, borderWidth: 2, parsing: false, normalized: true },
-            { label: 'p50', data: [], borderColor: 'rgba(99, 102, 241, 0.8)', borderWidth: 1.5, borderDash: [6, 3], pointRadius: 0, fill: false, parsing: false, normalized: true },
-            { label: 'p95', data: [], borderColor: 'rgba(245, 158, 11, 0.8)', borderWidth: 1.5, borderDash: [6, 3], pointRadius: 0, fill: false, parsing: false, normalized: true },
-            { label: 'p99', data: [], borderColor: 'rgba(239, 68, 68, 0.8)', borderWidth: 1.5, borderDash: [6, 3], pointRadius: 0, fill: false, parsing: false, normalized: true },
-        ]},
+        data: { datasets: [] }, // Populated dynamically
         options: {
             responsive: true, maintainAspectRatio: false, animation: false,
-            interaction: { mode: 'index', intersect: false },
+            interaction: { mode: 'nearest', intersect: false },
             plugins: {
-                legend: { display: true, position: 'top', labels: { boxWidth: 10, font: { size: 9 }, usePointStyle: true, pointStyle: 'line' } },
-                tooltip: {
-                    ...getTooltipStyle(currentTheme),
-                    filter: (item) => item.datasetIndex === 0,
-                    callbacks: { label: (item) => `CDF: ${(item.raw.y * 100).toFixed(1)}% at ${item.raw.x.toFixed(2)}s` }
-                }
+                legend: { display: true, position: 'top', labels: { usePointStyle: true, font: { family: "'Times New Roman', serif" } } },
+                tooltip: { ...getTooltipStyle(currentTheme), callbacks: { label: (item) => `${item.dataset.label}: ${(item.raw.y * 100).toFixed(1)}% at ${item.raw.x.toFixed(2)}s` } }
             },
             scales: {
-                x: { type: 'linear', grid: { color: THEMES[currentTheme].gridColor }, ticks: { font: TICK_FONT, color: THEMES[currentTheme].tickColor, callback: v => v.toFixed(0) + 's' }, title: { display: true, text: 'Latency (seconds)', color: THEMES[currentTheme].axisTitleColor, font: AXIS_TITLE_FONT } },
+                x: { type: 'linear', grid: { color: THEMES[currentTheme].gridColor }, ticks: { font: TICK_FONT, color: THEMES[currentTheme].tickColor, callback: engFormatter }, title: { display: true, text: 'Latency (seconds)', color: THEMES[currentTheme].axisTitleColor, font: AXIS_TITLE_FONT } },
                 y: { grid: { color: THEMES[currentTheme].gridColor }, ticks: { font: TICK_FONT, color: THEMES[currentTheme].tickColor, callback: v => (v * 100).toFixed(0) + '%' }, title: { display: true, text: 'P(X ≤ x)', color: THEMES[currentTheme].axisTitleColor, font: AXIS_TITLE_FONT }, min: 0, max: 1 }
             }
         }
     });
 
-    // ── 5. Roofline ──
+    // ── 5. Roofline (colored by traffic type) ──
     const rooflineDatasets = [
-        {
-            label: 'Hardware Roof',
-            data: [],
-            type: 'line',
-            borderColor: THEMES[currentTheme].tickColor,
-            borderWidth: 2,
-            pointRadius: 0,
-            fill: false,
-            parsing: false,
-        },
+        { label: 'Hardware Roof', data: [], type: 'line', borderColor: THEMES[currentTheme].tickColor, borderWidth: 2, pointRadius: 0, fill: false, parsing: false },
         ...Object.entries(TRAFFIC_LABELS).map(([type, label]) => ({
-            label: label,
-            data: [],
-            type: 'scatter',
-            backgroundColor: (TRAFFIC_COLORS[type] || '#888') + '99',
-            borderColor: TRAFFIC_COLORS[type] || '#888',
-            borderWidth: 1,
-            pointRadius: 3.5,
-            pointHoverRadius: 6,
-            parsing: false,
+            label: label, data: [], type: 'scatter', backgroundColor: (TRAFFIC_COLORS[type] || '#888') + '99', borderColor: TRAFFIC_COLORS[type] || '#888', borderWidth: 1, pointRadius: 3.5, pointHoverRadius: 6, parsing: false
         }))
     ];
 
@@ -315,13 +299,7 @@ function initCharts() {
             interaction: { mode: 'nearest', intersect: true },
             plugins: {
                 legend: { display: true, position: 'bottom', labels: { boxWidth: 8, font: { size: 9 }, padding: 6, usePointStyle: true, pointStyle: 'circle' } },
-                tooltip: {
-                    ...getTooltipStyle(currentTheme),
-                    callbacks: {
-                        title: (items) => `Request #${items[0].raw.id}`,
-                        label: (item) => `OI: ${item.raw.x.toFixed(2)} FLOP/byte  |  ${item.raw.y.toFixed(2)} tok/s`
-                    }
-                }
+                tooltip: { ...getTooltipStyle(currentTheme), callbacks: { title: (items) => `Request #${items[0].raw.id}`, label: (item) => `OI: ${item.raw.x.toFixed(2)} FLOP/byte  |  ${item.raw.y.toFixed(2)} tok/s` } }
             },
             scales: {
                 x: { type: 'logarithmic', grid: { color: THEMES[currentTheme].gridColor }, ticks: { font: TICK_FONT, color: THEMES[currentTheme].tickColor }, title: { display: true, text: 'Operational Intensity (FLOP/byte)', color: THEMES[currentTheme].axisTitleColor, font: AXIS_TITLE_FONT } },
@@ -354,7 +332,7 @@ function initCharts() {
                     ...getTooltipStyle(currentTheme),
                     callbacks: {
                         title: (items) => `Request #${items[0].raw.id}`,
-                        label: (item) => `Prompt: ${items[0]?.raw?.prompt || '?'} | Gen: ${items[0]?.raw?.gen || '?'} | E2E: ${items[0]?.raw?.e2e?.toFixed(2) || '?'}s`
+                        label: (item) => `Prompt: ${item.raw.prompt || '?'} | Gen: ${item.raw.gen || '?'} | E2E: ${item.raw.e2e?.toFixed(2) || '?'}s`
                     }
                 }
             },
@@ -480,6 +458,9 @@ function initSimulation() {
     if (worker) worker.terminate();
     worker = new Worker('sim_worker.js');
     worker.onmessage = handleWorkerMessage;
+    worker.onerror = (err) => {
+        console.error("Worker error:", err.message, "at", err.filename, ":", err.lineno);
+    };
 
     // Clear all charts
     for (const key of Object.keys(charts)) {
@@ -491,6 +472,10 @@ function initSimulation() {
             c.data.datasets.forEach(ds => ds.data = []);
         }
         c.update('none');
+    }
+
+    if (els.progressDisplay) {
+        els.progressDisplay.textContent = `Completed: 0 / ${getWorkload().numRequests}`;
     }
 
     setStatus('idle');
@@ -505,6 +490,8 @@ function handleWorkerMessage(e) {
         els.btnPlay.disabled = false; els.btnStep.disabled = false; els.btnFast.disabled = false;
     } else if (type === 'DONE') {
         setStatus('done');
+        runHistory[payload.scheduler || 'FCFS'] = payload;
+        updateCharts(payload, true);
     }
 }
 
@@ -525,16 +512,20 @@ function setStatus(state) {
 function updateDashboard(snap) {
     els.timeDisplay.textContent = `t = ${snap.time.toFixed(4)}s`;
 
+    if (els.progressDisplay) {
+        els.progressDisplay.textContent = `Completed: ${snap.completed} / ${snap.total}`;
+    }
+
     // KPIs
-    els.valCompleted.textContent = `${snap.completed} / ${snap.total}`;
-    els.subCompleted.textContent = `${snap.total > 0 ? (snap.completed / snap.total * 100).toFixed(1) : '0.0'}%`;
-    els.valThroughput.textContent = snap.throughput.toFixed(1);
-    els.valAvgLat.textContent = snap.avgLatency.toFixed(2);
-    els.valP95.textContent = snap.p95.toFixed(2);
-    els.valCache.textContent = `${(snap.cacheHitRate * 100).toFixed(1)}%`;
-    els.subCache.textContent = `${snap.cacheHits.toLocaleString()} hits / ${snap.cacheMisses.toLocaleString()} misses`;
-    els.valQueue.textContent = snap.queueDepth;
-    els.subQueue.textContent = `peak: ${snap.peakQueueDepth}`;
+    if (els.valCompleted) els.valCompleted.textContent = `${snap.completed} / ${snap.total}`;
+    if (els.subCompleted) els.subCompleted.textContent = `${snap.total > 0 ? (snap.completed / snap.total * 100).toFixed(1) : '0.0'}%`;
+    if (els.valThroughput) els.valThroughput.textContent = snap.throughput.toFixed(1);
+    if (els.valAvgLat) els.valAvgLat.textContent = snap.avgLatency.toFixed(2);
+    if (els.valP95) els.valP95.textContent = snap.p95.toFixed(2);
+    if (els.valCache) els.valCache.textContent = `${(snap.cacheHitRate * 100).toFixed(1)}%`;
+    if (els.subCache) els.subCache.textContent = `${snap.cacheHits.toLocaleString()} hits / ${snap.cacheMisses.toLocaleString()} misses`;
+    if (els.valQueue) els.valQueue.textContent = snap.queueDepth;
+    if (els.subQueue) els.subQueue.textContent = `peak: ${snap.peakQueueDepth}`;
 
     // Engine status
     updateEngineIndicator(els.prefillDot, els.prefillState, snap.prefillBusy);
@@ -563,111 +554,191 @@ function updateEngineIndicator(dot, text, isBusy) {
 
 let lastChartUpdate = 0;
 
-function updateCharts(snap) {
+function updateCharts(snap, isFinal = false) {
     const now = performance.now();
     if (now - lastChartUpdate < 300 && snap.completed < snap.total) return;
     lastChartUpdate = now;
 
-    const lats = snap.latencies;
-    if (!lats || lats.length === 0) return;
-
+    if (!snap) return;
+    const lats = snap.latencies || [];
     const keys = Object.keys(TRAFFIC_LABELS);
 
-    // ── 1. Latency Scatter (grouped by traffic type) ──
-    charts.latency.data.datasets.forEach(ds => ds.data = []);
-    for (const r of lats) {
-        const idx = keys.indexOf(r.trafficType);
-        if (idx !== -1) {
-            charts.latency.data.datasets[idx].data.push({ x: r.id, y: r.e2e, id: r.id });
-        }
-    }
-    charts.latency.update('none');
+    // ── 0. Tradeoff Chart ──
+    const activeSched = snap.scheduler || 'FCFS';
+    const tempHistory = { ...runHistory };
+    tempHistory[activeSched] = snap;
 
-    // ── 2. Throughput ──
-    const cumTokens = [];
-    let totalTok = 0;
-    for (const r of lats) {
-        totalTok += r.gen;
-        cumTokens.push({ x: r.id, y: totalTok });
-    }
-    charts.throughput.data.datasets[0].data = cumTokens;
-    charts.throughput.update('none');
+    const schedulers = Object.keys(tempHistory);
+    charts.tradeoff.data.labels = schedulers;
+    charts.tradeoff.data.datasets[0].data = schedulers.map(s => tempHistory[s].throughput > 0 ? tempHistory[s].throughput : null);
+    charts.tradeoff.data.datasets[1].data = schedulers.map(s => tempHistory[s].p95 > 0 ? tempHistory[s].p95 : null);
+    charts.tradeoff.update('none');
 
-    // ── 3. Phase Breakdown ──
-    const maxBars = 40;
-    const startIdx = Math.max(0, lats.length - maxBars);
-    const sliced = lats.slice(startIdx);
-    charts.phase.data.labels = sliced.map(r => r.id.toString());
-    charts.phase.data.datasets[0].data = sliced.map(r => r.prefill);
-    charts.phase.data.datasets[1].data = sliced.map(r => r.decode);
-    charts.phase.update('none');
-
-    // ── 4. CDF ──
-    const sorted = lats.map(l => l.e2e).sort((a, b) => a - b);
-    charts.cdf.data.datasets[0].data = sorted.map((v, i) => ({ x: v, y: (i + 1) / sorted.length }));
-    const p50 = sorted[Math.floor(sorted.length * 0.50)] || 0;
-    const p95 = sorted[Math.floor(sorted.length * 0.95)] || 0;
-    const p99 = sorted[Math.floor(sorted.length * 0.99)] || 0;
-    charts.cdf.data.datasets[1].data = [{ x: p50, y: 0 }, { x: p50, y: 1 }];
-    charts.cdf.data.datasets[2].data = [{ x: p95, y: 0 }, { x: p95, y: 1 }];
-    charts.cdf.data.datasets[3].data = [{ x: p99, y: 0 }, { x: p99, y: 1 }];
-    const cdfInfo = document.getElementById('cdf-info');
-    if (cdfInfo) cdfInfo.textContent = `p50=${p50.toFixed(1)}s p95=${p95.toFixed(1)}s p99=${p99.toFixed(1)}s`;
-    charts.cdf.update('none');
-
-    // ── 5. Roofline (colored by traffic type) ──
-    const computeTput = snap.peakComputeTput || 100;
-    const memTput = snap.peakMemBwTput || 10;
-    const ridgeX = computeTput / memTput;
-
-    charts.roofline.data.datasets[0].data = [
-        { x: 0.01, y: 0.01 * memTput },
-        { x: ridgeX, y: computeTput },
-        { x: 10000, y: computeTput }
-    ];
-
-    // Clear traffic datasets (index 1 onwards)
-    for (let i = 1; i < charts.roofline.data.datasets.length; i++) {
-        charts.roofline.data.datasets[i].data = [];
-    }
-
-    for (const r of lats) {
-        const tput = r.decode > 0 ? r.gen / r.decode : 0;
-        const idx = keys.indexOf(r.trafficType);
-        if (idx !== -1) {
-            charts.roofline.data.datasets[idx + 1].data.push({
-                x: Math.max(0.01, r.operationalIntensity),
-                y: Math.max(0.01, tput),
-                id: r.id
+    if (lats.length > 0) {
+        // ── 1. Queue Evacuation Curve ──
+        const evacDatasets = [];
+        const runs = isFinal ? Object.keys(runHistory) : [snap.scheduler || 'FCFS'];
+        const colors = ['#4f46e5', '#10b981', '#f59e0b', '#ec4899'];
+        
+        runs.forEach((sName, i) => {
+            const sSnap = isFinal ? runHistory[sName] : snap;
+            if (!sSnap.latencies) return;
+            const pts = [];
+            const sortedLats = [...sSnap.latencies].sort((a,b) => a.completion - b.completion);
+            const step = Math.max(1, Math.floor(sortedLats.length / 300));
+            sortedLats.forEach((r, idx) => {
+                if (idx % step === 0 || idx === sortedLats.length - 1) {
+                    pts.push({ x: r.completion, y: idx + 1 });
+                }
             });
-        }
-    }
-    charts.roofline.update('none');
+            evacDatasets.push({
+                label: sName,
+                data: pts,
+                borderColor: colors[i % colors.length],
+                borderWidth: 2,
+                pointRadius: 0,
+                fill: false,
+                tension: 0.1
+            });
+        });
+        charts.latency.data.datasets = evacDatasets;
+        charts.latency.update('none');
 
-    // ── 6. Clustering ──
-    charts.cluster.data.datasets.forEach(ds => ds.data = []);
-    const ca = snap.clusterAssignments;
-    if (ca && ca.length === lats.length) {
-        for (let i = 0; i < lats.length; i++) {
-            const c = ca[i];
-            if (c >= 0 && c < 4) {
-                charts.cluster.data.datasets[c].data.push({
-                    x: lats[i].prompt,
-                    y: lats[i].gen,
-                    id: lats[i].id,
-                    prompt: lats[i].prompt,
-                    gen: lats[i].gen,
-                    e2e: lats[i].e2e
+        // ── 2. Throughput ──
+        const cumTokens = [];
+        let totalTok = 0;
+        const sortedByCompletion = [...lats].sort((a, b) => a.completion - b.completion);
+        sortedByCompletion.forEach((r, idx) => {
+            totalTok += r.gen;
+            cumTokens.push({ x: idx + 1, y: totalTok });
+        });
+        charts.throughput.data.datasets[0].data = cumTokens;
+        charts.throughput.update('none');
+
+        // ── 3. Phase Breakdown (Saliency) ──
+        let totalPrefill = 0, totalDecode = 0, totalE2e = 0;
+        for (const r of lats) {
+            totalPrefill += r.prefill;
+            totalDecode += r.decode;
+            totalE2e += r.e2e;
+        }
+        if (totalE2e > 0) {
+            charts.phase.data.labels = ['% Total Time'];
+            const pPct = (totalPrefill / totalE2e) * 100;
+            const dPct = (totalDecode / totalE2e) * 100;
+            const oPct = Math.max(0, 100 - pPct - dPct);
+            charts.phase.data.datasets[0].data = [pPct];
+            charts.phase.data.datasets[1].data = [dPct];
+            charts.phase.data.datasets[2].data = [oPct];
+        }
+        charts.phase.update('none');
+
+        // ── 4. Overlaid CDF ──
+        const cdfDatasets = [];
+        const runKeys = isFinal ? Object.keys(runHistory) : [snap.scheduler || 'FCFS'];
+        const cdfColors = ['#10b981', '#3b82f6', '#8b5cf6', '#ec4899'];
+        
+        runKeys.forEach((sName, i) => {
+            const sSnap = isFinal ? runHistory[sName] : snap;
+            if (!sSnap.latencies) return;
+            const sorted = [...sSnap.latencies].map(l => l.e2e).sort((a, b) => a - b);
+            const step = Math.max(1, Math.floor(sorted.length / 200));
+            const pts = [];
+            sorted.forEach((v, idx) => {
+                if (idx % step === 0 || idx === sorted.length - 1) {
+                    pts.push({ x: v, y: (idx + 1) / sorted.length });
+                }
+            });
+            const p50 = sorted[Math.floor(sorted.length * 0.50)] || 0;
+            const p95 = sorted[Math.floor(sorted.length * 0.95)] || 0;
+            
+            cdfDatasets.push({
+                label: `${sName} CDF`,
+                data: pts,
+                borderColor: cdfColors[i % cdfColors.length],
+                borderWidth: 2,
+                pointRadius: 0,
+                fill: false,
+                borderDash: i === 0 ? [] : [5, 5],
+                tension: 0.1
+            });
+            
+            cdfDatasets.push({
+                label: `${sName} P50`,
+                data: [{x: p50, y: 0}, {x: p50, y: 1}],
+                borderColor: cdfColors[i % cdfColors.length],
+                borderWidth: 1,
+                pointRadius: 0,
+                fill: false,
+                borderDash: [2, 2]
+            });
+            cdfDatasets.push({
+                label: `${sName} P95`,
+                data: [{x: p95, y: 0}, {x: p95, y: 1}],
+                borderColor: cdfColors[i % cdfColors.length],
+                borderWidth: 1.5,
+                pointRadius: 0,
+                fill: false,
+                borderDash: [4, 4]
+            });
+        });
+        charts.cdf.data.datasets = cdfDatasets;
+        charts.cdf.update('none');
+
+        // ── 5. Roofline (colored by traffic type) ──
+        const computeTput = snap.peakComputeTput || 100;
+        const memTput = snap.peakMemBwTput || 10;
+        const ridgeX = computeTput / memTput;
+
+        charts.roofline.data.datasets[0].data = [
+            { x: 0.01, y: 0.01 * memTput },
+            { x: ridgeX, y: computeTput },
+            { x: 10000, y: computeTput }
+        ];
+
+        // Clear traffic datasets (index 1 onwards)
+        for (let i = 1; i < charts.roofline.data.datasets.length; i++) {
+            charts.roofline.data.datasets[i].data = [];
+        }
+
+        for (const r of lats) {
+            const tput = r.decode > 0 ? r.gen / r.decode : 0;
+            const idx = keys.indexOf(r.trafficType);
+            if (idx !== -1) {
+                charts.roofline.data.datasets[idx + 1].data.push({
+                    x: Math.max(0.01, r.operationalIntensity),
+                    y: Math.max(0.01, tput),
+                    id: r.id
                 });
             }
         }
-        const clusterInfo = document.getElementById('cluster-info');
-        if (clusterInfo) {
-            const counts = charts.cluster.data.datasets.map(d => d.data.length);
-            clusterInfo.textContent = counts.map((c, i) => `C${i+1}:${c}`).join(' ');
+        charts.roofline.update('none');
+
+        // ── 6. Clustering ──
+        charts.cluster.data.datasets.forEach(ds => ds.data = []);
+        const ca = snap.clusterAssignments;
+        if (ca && ca.length === lats.length) {
+            for (let i = 0; i < lats.length; i++) {
+                const c = ca[i];
+                if (c >= 0 && c < 4) {
+                    charts.cluster.data.datasets[c].data.push({
+                        x: lats[i].prompt,
+                        y: lats[i].gen,
+                        id: lats[i].id,
+                        prompt: lats[i].prompt,
+                        gen: lats[i].gen,
+                        e2e: lats[i].e2e
+                    });
+                }
+            }
+            const clusterInfo = document.getElementById('cluster-info');
+            if (clusterInfo) {
+                const counts = charts.cluster.data.datasets.map(d => d.data.length);
+                clusterInfo.textContent = counts.map((c, i) => `C${i+1}:${c}`).join(' ');
+            }
         }
+        charts.cluster.update('none');
     }
-    charts.cluster.update('none');
 
     // ── 7. Queue Depth ──
     const qt = snap.queueTimeline;
