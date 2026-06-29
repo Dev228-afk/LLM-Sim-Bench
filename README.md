@@ -1,77 +1,80 @@
-# LLMSimBench: Agentic LLM Datacenter Traffic Simulator & Performance Analyzer
+# LLMSimBench: Agentic LLM Serving Performance Simulator
 
 [![C++20](https://img.shields.io/badge/C%2B%2B-20-blue.svg?style=flat-square&logo=c%2B%2B)](https://en.cppreference.com/w/cpp/compiler_support/20)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-green.svg?style=flat-square&logo=python)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
 
-**LLMSimBench** is a high-performance, discrete-event simulation (DES) engine and performance analysis suite designed to model agentic LLM datacenter traffic. Built with a C++20 core for speed and pybind11 bindings for seamless Python-based analytical pipelines, it allows researchers and engineers to mathematically model, profile, and optimize LLM serving infrastructures.
+LLMSimBench is a high-performance, discrete-event simulation (DES) engine and performance analysis suite designed to model agentic LLM serving workloads in datacenter environments. Built with a C++20 core for speed and pybind11 bindings for Python integration, it allows researchers and engineers to model, profile, and optimize LLM serving infrastructures.
 
 The simulator models the complex, non-linear request lifecycles of agentic AI workflows (recursive loops, multi-step thinking, tool calls, and multi-RAG queries) across heterogeneous hardware configurations, featuring Prefill-Decode Disaggregation (PDD), chunked prefilling, KV cache memory pressure eviction, and advanced scheduling policies.
 
 ---
 
-## Key Highlights & Academic Foundations
+## Key Capabilities
 
-* **High-Throughput C++20 Engine**: Tracks **50,000+ state transitions per second**.
-* **Mathematical Validation**: Simulates queue depths, scheduling latencies, and resource contention with **within 8% accuracy** of open-source production baselines. Validated against **M/G/c** queueing formulations for heavy-tailed, high-variance agentic workflows, and baseline **Erlang-C (M/M/c)** models for standard uniform LLM traffic.
+* **High-Throughput C++20 Engine**: Tracks more than 50,000 state transitions per second.
+* **Mathematical Validation**: Simulates queue depths, scheduling latencies, and resource contention within 8% accuracy of open-source production baselines. Validated against M/G/c queueing formulations for heavy-tailed, high-variance agentic workloads, and baseline Erlang-C (M/M/c) models for standard uniform LLM traffic.
 * **Agentic Workload Characterization**: Models non-linear structural traffic paths, transition matrices between compute-bound Prefill stages and memory-bound Decode loops, routing dependencies, and KV-cache memory pressure points.
-* **Pluggable Architecture**:
-  * **Schedulers**: First-Come-First-Serve (FCFS), Priority Scheduling, Continuous Batching, and **Priority-Based Continuous Batching**.
-  * **KV Cache Eviction Policies**: Least Recently Used (LRU), Random, and Attention-Guided Eviction.
-  * **Memory Management**: Tracks global KV cache budget limits and dynamically preempts running decoding requests when memory pressure thresholds are exceeded.
+* **Pluggable Schedulers**: First-Come-First-Serve (FCFS), Priority Scheduling, Continuous Batching, and Priority-Based Continuous Batching.
+* **KV Cache Eviction Policies**: Least Recently Used (LRU), Random, and Attention-Guided Eviction.
+* **Memory Management**: Tracks global KV cache budget limits and dynamically preempts running decoding requests when memory pressure thresholds are exceeded.
 * **Chunked Prefill**: Supports time-sliced prompt ingestion to avoid blocking the GPU on massive context prefilling, allowing seamless preemptions between chunks.
-* **Interactive UI & Real-Time Visualization**: A modern Web GUI featuring visual simulation playback, real-time metrics (latency CDFs, queue depth, throughput), **Hardware Roofline Model** scaling analysis, and **K-Means Traffic Clustering** to classify request profiles.
+* **Interactive UI and Real-Time Visualization**: A Web GUI featuring visual simulation playback, real-time metrics (latency CDFs, queue depth, throughput), Hardware Roofline Model scaling analysis, and K-Means Traffic Clustering to classify request profiles.
 
 ---
 
 ## System Architecture
 
-`	ext
-┌────────────────────────────────────────────────────────────────────────┐
-│                        Python Analytical Layer                         │
-│  ┌───────────────┐     ┌──────────────────────┐     ┌──────────────┐   │
-│  │   sweep.py    │     │ analysis/clustering  │     │ security.py  │   │
-│  │ (Param Sweep) │     │   (K-Means/Matplotlib)│     │(Input/Leaks) │   │
-│  └───────┬───────┘     └──────────┬───────────┘     └──────┬───────┘   │
-│          │                        │                        │           │
-│  ────────┴────────────────────────┴────────────────────────┴─────────  │
-│                           pybind11 Bindings                            │
-│                       (llmsimbench_core module)                        │
-│  ────────────────────────────────────────────────────────────────────  │
-│                                                                        │
-│  ┌───────────────────┐    ┌─────────────────┐    ┌──────────────────┐  │
-│  │ SimulationEngine  │────│    Scheduler    │────│     KVCache      │  │
-│  │   (DES Core)      │    │(FCFS/CB/Priority│    │(LRU/Attention/   │  │
-│  └────────┬──────────┘    └─────────────────┘    │    Random)       │  │
-│           │                                      └──────────────────┘  │
-│  ┌────────┴──────────┐    ┌─────────────────┐                          │
-│  │   PrefillEngine   │────│  DecodeEngine   │                          │
-│  │  (Compute-Bound)  │    │(Memory-BW-Bound)│                          │
-│  │  [H100 SXM, etc.] │    │  [L4, A100, etc]│                          │
-│  └───────────────────┘    └─────────────────┘                          │
-│                               C++20 Core                               │
-└────────────────────────────────────────────────────────────────────────┘
-`
+```mermaid
+graph TD
+    subgraph Python Analytical Layer
+        sweep[sweep.py Parameter Sweeps]
+        analysis[clustering.py Traffic Analysis]
+        security[security.py Safe API Wrappers]
+    end
 
-The C++ Core is modularized into distinct, highly cohesive engine files:
-* src/models/prefill_engine.hpp: Simulates compute-bound prompt prefilling and chunking logic.
-* src/models/decode_engine.hpp: Simulates memory-bandwidth-bound sequential token generation.
-* src/models/simulation_engine.hpp: Orchestrates the discrete event simulation, event queue, memory manager, and scheduler coordination.
+    subgraph pybind11 Bindings
+        pyb[llmsimbench_core]
+    end
+
+    subgraph C++20 Simulation Core
+        engine[SimulationEngine DES Orchestrator]
+        sched[Scheduler Interface FCFS / Continuous Batching / Priority]
+        kv[GlobalKVMemoryManager & KVCache]
+        prefill[PrefillEngine Compute-bound]
+        decode[DecodeEngine Memory-bandwidth-bound]
+    end
+
+    sweep --> pyb
+    analysis --> pyb
+    security --> pyb
+    pyb --> engine
+    engine --> sched
+    engine --> kv
+    engine --> prefill
+    engine --> decode
+```
+
+The C++ Core is modularized into distinct, cohesive engine files under `src/models/`:
+* `prefill_engine.hpp`: Simulates compute-bound prompt prefilling and chunking logic.
+* `decode_engine.hpp`: Simulates memory-bandwidth-bound sequential token generation.
+* `simulation_engine.hpp`: Orchestrates the discrete event simulation, event queue, memory manager, and scheduler coordination.
+* `timing_model.hpp`: A backward-compatible aggregate header that includes the three new modular engine files.
 
 ---
 
-## Installation & Build
+## Installation and Build
 
 ### Prerequisites
 
-* **CMake** >= 3.21
-* **C++20** compiler (GCC 11+, Clang 14+, MSVC 2022+)
-* **Python** >= 3.10
-* **pybind11** (cloned automatically via CMake if not found)
+* CMake >= 3.21
+* C++20 compiler (GCC 11+, Clang 14+, MSVC 2022+)
+* Python >= 3.10
+* pybind11 (cloned automatically via CMake if not found)
 
-### Compile C++ Core & Bindings
+### Compile C++ Core and Bindings
 
-`ash
+```bash
 # Clone the repository
 git clone https://github.com/Dev228-afk/LLM-Sim-Bench.git
 cd LLM-Sim-Bench
@@ -82,13 +85,13 @@ cmake --build build
 
 # Run C++ Unit Tests to verify engine correctness
 ./build/test_des_engine
-`
+```
 
 ### Install Python Dependencies
 
-`ash
+```bash
 pip install -r requirements.txt
-`
+```
 
 ---
 
@@ -98,7 +101,7 @@ pip install -r requirements.txt
 
 Integrate the high-performance simulator core directly into your Python scripts:
 
-`python
+```python
 import sys
 sys.path.insert(0, "python")
 import llmsimbench_core as lsb
@@ -137,25 +140,25 @@ print(f"Total Completed Requests: {stats.total_requests_completed}")
 print(f"Total Preemptions & Evictions: {stats.total_preemptions}")
 print(f"Token Throughput: {stats.throughput_tokens_per_sec():.2f} tok/s")
 print(f"Average End-to-End Latency: {stats.avg_e2e_latency():.4f}s")
-`
+```
 
-### 2. Run Parametric Sweeps & Analytical Pipelines
+### 2. Run Parametric Sweeps and Analytical Pipelines
 
 Run large-scale experiment sweeps across combinations of schedulers and eviction policies:
 
-`ash
+```bash
 # Perform a parameter sweep
 python python/sweep.py --config configs/default.json
 
 # Analyze results and group traffic profiles using unsupervised K-Means clustering
 python python/analysis/clustering.py --csv results/sweep_results.csv
-`
+```
 
 ---
 
-## Evaluation & Visualizations
+## Evaluation and Visualizations
 
-Our simulator produces academic-grade visualizations to benchmark and characterize serving performance:
+Our simulator produces analytical visualizations to benchmark and characterize serving performance:
 
 1. **Roofline Model**: Analyzes whether your GPU datacenter is compute-bound during prefill stages or memory-bandwidth-bound during decode phases.
 2. **K-Means Traffic Clustering**: Groups simulated traffic classes (e.g., recursive tool loops, multi-RAG, simple Q&A) based on input/output token characteristics and cache hit rates.
@@ -171,17 +174,17 @@ The simulator includes a native HTML5/CSS3/JavaScript GUI that runs inside your 
 * **Web Worker Orchestration**: Run simulations in a background Web Worker utilizing a time-budgeted execution loop to keep UI thread responsive (60fps) even during 50,000+ request runs.
 
 To launch the GUI, serve the gui folder locally:
-`ash
+```bash
 # Use any static server, e.g., Python's built-in server
 python -m http.server 8000 --directory gui
 # Open http://localhost:8000 in your browser
-`
+```
 
 ---
 
-## Security & Validations
+## Security and Validations
 
-The optional security.py wrapper implements production-ready simulation safeguards:
+The optional `security.py` wrapper implements simulation safeguards:
 * **Strict Validation**: Bounds-checking constraints on incoming workloads (tokens, sizes, parameters) to model hardware memory limits accurately.
 * **KV Leakage Modeling**: Analyzes probability profiles of KV cache side-channel data leakage across tenant boundaries.
 
