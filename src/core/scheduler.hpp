@@ -136,4 +136,76 @@ private:
     int max_batch_size_;
 };
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Priority-Based Continuous Batching (with preemption support)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Combines priority scoring with batch-size limiting and preemption signals.
+///
+/// Requests are scored identically to PriorityScheduler (lower = higher
+/// priority).  At most `max_batch_size` requests are returned per round.
+/// The `should_preempt()` method indicates whether a pending candidate is
+/// urgent enough to preempt a currently-running request.
+class PriorityContinuousBatchingScheduler : public Scheduler {
+public:
+    explicit PriorityContinuousBatchingScheduler(
+        int    max_batch             = 8,
+        double prompt_w              = 0.1,
+        double gen_w                 = 0.5,
+        double preemption_threshold  = 0.5)
+        : max_batch_size_(max_batch)
+        , prompt_weight_(prompt_w)
+        , gen_weight_(gen_w)
+        , preemption_threshold_(preemption_threshold)
+    {}
+
+    [[nodiscard]] std::vector<int> schedule(
+        std::vector<Request>& pending) override
+    {
+        // Sort by priority score (ascending = highest priority first)
+        std::sort(pending.begin(), pending.end(),
+                  [this](const Request& a, const Request& b) {
+                      return score(a) < score(b);
+                  });
+
+        std::vector<int> order;
+        int count = std::min(static_cast<int>(pending.size()), max_batch_size_);
+        order.reserve(static_cast<size_t>(count));
+        for (int i = 0; i < count; ++i) {
+            order.push_back(pending[static_cast<size_t>(i)].get_id());
+        }
+        return order;
+    }
+
+    /// Returns true if `candidate` is urgent enough to preempt `running`.
+    /// A preemption is warranted when the candidate's score is lower
+    /// (higher priority) than the running request's score by at least
+    /// `preemption_threshold * running_score`.
+    [[nodiscard]] bool should_preempt(const Request& running,
+                                      const Request& candidate) const
+    {
+        double running_score   = score(running);
+        double candidate_score = score(candidate);
+        // Candidate must be significantly more urgent
+        return candidate_score < running_score * (1.0 - preemption_threshold_);
+    }
+
+    [[nodiscard]] std::string policy_name() const override {
+        return "PriorityContinuousBatching(batch=" +
+               std::to_string(max_batch_size_) + ")";
+    }
+
+    [[nodiscard]] double score(const Request& r) const {
+        return r.get_prompt_length() * prompt_weight_
+             + r.get_generation_length() * gen_weight_;
+    }
+
+private:
+    int    max_batch_size_;
+    double prompt_weight_;
+    double gen_weight_;
+    double preemption_threshold_;
+};
+
 } // namespace llmsimbench

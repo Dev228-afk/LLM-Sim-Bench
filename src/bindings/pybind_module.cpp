@@ -58,6 +58,7 @@ PYBIND11_MODULE(llmsimbench_core, m) {
     py::enum_<llmsimbench::EventType>(m, "EventType")
         .value("REQUEST_ARRIVAL",      llmsimbench::EventType::REQUEST_ARRIVAL)
         .value("PREFILL_COMPLETE",     llmsimbench::EventType::PREFILL_COMPLETE)
+        .value("PREFILL_CHUNK_COMPLETE", llmsimbench::EventType::PREFILL_CHUNK_COMPLETE)
         .value("KV_TRANSFER_COMPLETE", llmsimbench::EventType::KV_TRANSFER_COMPLETE)
         .value("DECODE_STEP_COMPLETE", llmsimbench::EventType::DECODE_STEP_COMPLETE)
         .value("DECODE_COMPLETE",      llmsimbench::EventType::DECODE_COMPLETE)
@@ -70,6 +71,7 @@ PYBIND11_MODULE(llmsimbench_core, m) {
         .value("PENDING",    llmsimbench::RequestState::PENDING)
         .value("IN_PREFILL", llmsimbench::RequestState::IN_PREFILL)
         .value("IN_DECODE",  llmsimbench::RequestState::IN_DECODE)
+        .value("PREEMPTED",  llmsimbench::RequestState::PREEMPTED)
         .value("COMPLETED",  llmsimbench::RequestState::COMPLETED)
         .export_values();
 
@@ -106,6 +108,9 @@ PYBIND11_MODULE(llmsimbench_core, m) {
         .def("get_prefill_start",   &llmsimbench::Request::get_prefill_start)
         .def("get_decode_start",    &llmsimbench::Request::get_decode_start)
         .def("get_completion_time", &llmsimbench::Request::get_completion_time)
+        .def("get_preemption_count", &llmsimbench::Request::get_preemption_count)
+        .def("get_prefill_tokens_processed", &llmsimbench::Request::get_prefill_tokens_processed)
+        .def("get_remaining_prefill_tokens", &llmsimbench::Request::get_remaining_prefill_tokens)
         .def("__repr__", [](const llmsimbench::Request& r) {
             return "<Request id=" + std::to_string(r.get_id()) +
                    " state=" + r.get_state_str() +
@@ -215,6 +220,16 @@ PYBIND11_MODULE(llmsimbench_core, m) {
                    m, "ContinuousBatchingScheduler")
         .def(py::init<int>(), py::arg("max_batch_size") = 8);
 
+    py::class_<llmsimbench::PriorityContinuousBatchingScheduler,
+               llmsimbench::Scheduler,
+               std::shared_ptr<llmsimbench::PriorityContinuousBatchingScheduler>>(
+                   m, "PriorityContinuousBatchingScheduler")
+        .def(py::init<int, double, double, double>(),
+             py::arg("max_batch_size") = 8,
+             py::arg("prompt_weight") = 0.1,
+             py::arg("generation_weight") = 0.5,
+             py::arg("preemption_threshold") = 0.5);
+
     // ─── SimulationStats ────────────────────────────────────────────────
     py::class_<llmsimbench::SimulationStats>(m, "SimulationStats")
         .def_readonly("total_requests_completed",  &llmsimbench::SimulationStats::total_requests_completed)
@@ -226,6 +241,8 @@ PYBIND11_MODULE(llmsimbench_core, m) {
         .def_readonly("total_cache_hits",          &llmsimbench::SimulationStats::total_cache_hits)
         .def_readonly("total_cache_misses",        &llmsimbench::SimulationStats::total_cache_misses)
         .def_readonly("peak_pending_queue_depth",  &llmsimbench::SimulationStats::peak_pending_queue_depth)
+        .def_readonly("total_preemptions",          &llmsimbench::SimulationStats::total_preemptions)
+        .def_readonly("total_memory_pressure_evictions", &llmsimbench::SimulationStats::total_memory_pressure_evictions)
         .def("avg_e2e_latency",          &llmsimbench::SimulationStats::avg_e2e_latency)
         .def("throughput_tokens_per_sec",&llmsimbench::SimulationStats::throughput_tokens_per_sec)
         .def("__repr__", [](const llmsimbench::SimulationStats& s) {
@@ -243,22 +260,27 @@ PYBIND11_MODULE(llmsimbench_core, m) {
                          llmsimbench::HardwareProfile decode_hw,
                          double model_params_B,
                          size_t kv_cache_capacity,
-                         double kv_transfer_latency_ms) {
+                         double kv_transfer_latency_ms,
+                         int prefill_chunk_size,
+                         size_t global_memory_budget_bytes) {
             if (!scheduler) {
                 throw std::invalid_argument("scheduler must not be None");
             }
             validate_non_negative(model_params_B, "model_params_B");
             return std::make_shared<llmsimbench::SimulationEngine>(
-                std::move(scheduler),
-                std::move(prefill_hw), std::move(decode_hw),
-                model_params_B, kv_cache_capacity, kv_transfer_latency_ms);
-        }),
-            py::arg("scheduler"),
-            py::arg("prefill_hw"),
-            py::arg("decode_hw"),
-            py::arg("model_params_B") = 7.0,
-            py::arg("kv_cache_capacity") = 4096,
-            py::arg("kv_transfer_latency_ms") = 0.5,
+                 std::move(scheduler),
+                 std::move(prefill_hw), std::move(decode_hw),
+                 model_params_B, kv_cache_capacity, kv_transfer_latency_ms,
+                 prefill_chunk_size, global_memory_budget_bytes);
+         }),
+             py::arg("scheduler"),
+             py::arg("prefill_hw"),
+             py::arg("decode_hw"),
+             py::arg("model_params_B") = 7.0,
+             py::arg("kv_cache_capacity") = 4096,
+             py::arg("kv_transfer_latency_ms") = 0.5,
+             py::arg("prefill_chunk_size") = 0,
+             py::arg("global_memory_budget_bytes") = 0,
             "Create a new simulation engine.\n\n"
             "Args:\n"
             "    scheduler: Scheduling policy (FCFS, Priority, etc.).\n"

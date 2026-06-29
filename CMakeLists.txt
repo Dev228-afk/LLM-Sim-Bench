@@ -18,7 +18,7 @@ else()
     add_compile_options(-Wall -Wextra -Wpedantic -g)
 endif()
 
-# ── Find or fetch pybind11 ──────────────────────────────────────────────────
+# ── Ffetch pybind11 ─────────────────────────────────
 find_package(pybind11 QUIET)
 if(NOT pybind11_FOUND)
     message(STATUS "pybind11 not found locally — fetching via FetchContent")
@@ -32,7 +32,7 @@ if(NOT pybind11_FOUND)
 endif()
 
 # ── Header-only core library (interface target) ────────────────────────────
-# All C++ simulation logic lives in headers under src/
+# AllC ++ simulation logic lives in headers under src/
 add_library(llmsimbench_headers INTERFACE)
 target_include_directories(llmsimbench_headers
     INTERFACE
@@ -58,7 +58,7 @@ foreach(config DEBUG RELEASE RELWITHDEBINFO MINSIZEREL)
     )
 endforeach()
 
-# ── C++ test executable ─────────────────────────────────────────────────────
+# ── C++ test executable ────────────────────────────────
 add_executable(test_des_engine tests/test_des_engine.cpp)
 target_link_libraries(test_des_engine PRIVATE llmsimbench_headers)
 

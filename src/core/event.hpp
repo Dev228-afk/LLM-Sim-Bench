@@ -20,6 +20,7 @@ namespace llmsimbench {
 enum class EventType : uint8_t {
     REQUEST_ARRIVAL,        // A new inference request enters the system
     PREFILL_COMPLETE,       // Prefill phase finished → ready for KV transfer / decode
+    PREFILL_CHUNK_COMPLETE, // A single chunk of the prefill phase finished (more remain)
     KV_TRANSFER_COMPLETE,   // KV cache transferred from prefill to decode node
     DECODE_STEP_COMPLETE,   // A single decode token has been generated
     DECODE_COMPLETE,        // All tokens for a request have been decoded
@@ -32,6 +33,7 @@ inline std::string event_type_to_string(EventType t) {
     switch (t) {
         case EventType::REQUEST_ARRIVAL:      return "REQUEST_ARRIVAL";
         case EventType::PREFILL_COMPLETE:     return "PREFILL_COMPLETE";
+        case EventType::PREFILL_CHUNK_COMPLETE: return "PREFILL_CHUNK_COMPLETE";
         case EventType::KV_TRANSFER_COMPLETE: return "KV_TRANSFER_COMPLETE";
         case EventType::DECODE_STEP_COMPLETE: return "DECODE_STEP_COMPLETE";
         case EventType::DECODE_COMPLETE:      return "DECODE_COMPLETE";
