@@ -20,6 +20,7 @@
 #include "../core/workload.hpp"
 #include "../core/scheduler.hpp"
 #include "../models/hardware_profile.hpp"
+#include "../models/model_architecture.hpp"
 #include "../models/timing_model.hpp"
 
 #include <memory>
@@ -185,15 +186,52 @@ PYBIND11_MODULE(llmsimbench_core, m) {
     // Factory functions for predefined profiles
     m.def("H100_PROFILE", &llmsimbench::H100_PROFILE,
           "NVIDIA H100 SXM 80GB hardware profile.");
-    m.def("A100_PROFILE", &llmsimbench::A100_PROFILE,
-          "NVIDIA A100 80GB hardware profile.");
-    m.def("L4_PROFILE",   &llmsimbench::L4_PROFILE,
-          "NVIDIA L4 24GB hardware profile.");
+    m.def("A100_80GB_PROFILE", &llmsimbench::A100_80GB_PROFILE, "Get standard A100 80GB profile");
+    m.def("L4_PROFILE",        &llmsimbench::L4_PROFILE,        "Get standard L4 24GB profile");
+    m.def("H200_PROFILE",      &llmsimbench::H200_PROFILE,      "Get standard H200 141GB profile");
+    m.def("GB200_PROFILE",     &llmsimbench::GB200_PROFILE,     "Get standard GB200 192GB profile");
+    m.def("GB300_PROFILE",     &llmsimbench::GB300_PROFILE,     "Get standard GB300 288GB profile");
     m.def("make_profile", &llmsimbench::make_profile,
           py::arg("name"), py::arg("compute_tflops"),
           py::arg("memory_bandwidth_gbps"), py::arg("memory_capacity_gb"),
           py::arg("network_bandwidth_gbps"), py::arg("network_latency_ms"),
           "Create a custom hardware profile.");
+
+    // ─── DataType enum ───────────────────────────────────────────────────────
+    py::enum_<llmsimbench::DataType>(m, "DataType")
+        .value("FP16", llmsimbench::DataType::FP16)
+        .value("BF16", llmsimbench::DataType::BF16)
+        .value("FP8",  llmsimbench::DataType::FP8)
+        .value("INT8", llmsimbench::DataType::INT8)
+        .value("INT4", llmsimbench::DataType::INT4)
+        .export_values();
+
+    m.def("get_bytes_per_param", &llmsimbench::get_bytes_per_param, "Get bytes per parameter for DataType");
+
+    // ─── ModelArchitecture ───────────────────────────────────────────────────
+    py::class_<llmsimbench::ModelArchitecture>(m, "ModelArchitecture")
+        .def(py::init<std::string, double, int, int, int, int, int>(),
+             py::arg("name"), py::arg("params_B"), py::arg("num_layers"),
+             py::arg("num_kv_heads"), py::arg("head_dimension"),
+             py::arg("hidden_size"), py::arg("vocab_size"))
+        .def_readwrite("name",           &llmsimbench::ModelArchitecture::name)
+        .def_readwrite("params_B",       &llmsimbench::ModelArchitecture::params_B)
+        .def_readwrite("num_layers",     &llmsimbench::ModelArchitecture::num_layers)
+        .def_readwrite("num_kv_heads",   &llmsimbench::ModelArchitecture::num_kv_heads)
+        .def_readwrite("head_dimension", &llmsimbench::ModelArchitecture::head_dimension)
+        .def_readwrite("hidden_size",    &llmsimbench::ModelArchitecture::hidden_size)
+        .def_readwrite("vocab_size",     &llmsimbench::ModelArchitecture::vocab_size)
+        .def("__repr__", [](const llmsimbench::ModelArchitecture& ma) {
+            return "<ModelArchitecture '" + ma.name + "' (" + std::to_string(ma.params_B) + "B)>";
+        });
+
+    m.def("LLAMA_3_8B_PROFILE",     &llmsimbench::LLAMA_3_8B_PROFILE);
+    m.def("LLAMA_3_70B_PROFILE",    &llmsimbench::LLAMA_3_70B_PROFILE);
+    m.def("MISTRAL_7B_V01_PROFILE", &llmsimbench::MISTRAL_7B_V01_PROFILE);
+    m.def("MIXTRAL_8X7B_PROFILE",   &llmsimbench::MIXTRAL_8X7B_PROFILE);
+    m.def("QWEN_15_72B_PROFILE",    &llmsimbench::QWEN_15_72B_PROFILE);
+    m.def("QWEN_2_7B_PROFILE",      &llmsimbench::QWEN_2_7B_PROFILE);
+    m.def("PHI_3_MINI_PROFILE",     &llmsimbench::PHI_3_MINI_PROFILE);
 
     // ─── Scheduler hierarchy ────────────────────────────────────────────
     py::class_<llmsimbench::Scheduler,

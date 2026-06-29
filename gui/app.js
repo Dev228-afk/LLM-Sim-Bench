@@ -62,8 +62,15 @@ const els = {
     trafficHint: document.getElementById('traffic-hint'),
     priorityFields: document.querySelectorAll('.priority-field'),
     batchFields: document.querySelectorAll('.batch-field'),
+    preemptionFields: document.querySelectorAll('.preemption-field'),
     stepBatch: document.getElementById('step-batch'),
     stepBatchVal: document.getElementById('step-batch-val'),
+
+    useManualModel: document.getElementById('use-manual-model'),
+    modelSelectWrapper: document.getElementById('model-select-wrapper'),
+    modelParamsWrapper: document.getElementById('model-params-wrapper'),
+    gpuUtilWrapper: document.getElementById('gpu-util-wrapper'),
+    manualKvFields: document.querySelectorAll('.manual-kv-field'),
 
     valCompleted: document.getElementById('val-completed'),
     subCompleted: document.getElementById('sub-completed'),
@@ -394,8 +401,9 @@ function initCharts() {
 function bindEvents() {
     els.schedulerType.addEventListener('change', (e) => {
         const val = e.target.value;
-        els.priorityFields.forEach(f => f.style.display = val === 'Priority' ? 'block' : 'none');
-        els.batchFields.forEach(f => f.style.display = val === 'ContinuousBatching' ? 'block' : 'none');
+        els.priorityFields.forEach(f => f.style.display = (val === 'Priority' || val === 'PriorityContinuousBatching') ? 'block' : 'none');
+        els.batchFields.forEach(f => f.style.display = (val === 'ContinuousBatching' || val === 'PriorityContinuousBatching') ? 'block' : 'none');
+        els.preemptionFields.forEach(f => f.style.display = (val === 'PriorityContinuousBatching') ? 'block' : 'none');
     });
 
     els.trafficProfile.addEventListener('change', (e) => {
@@ -404,6 +412,16 @@ function bindEvents() {
         // Hide manual prompt/gen fields when agentic (those are auto-generated per traffic type)
         document.querySelectorAll('.standard-workload-field').forEach(f => f.style.display = isAgentic ? 'none' : 'block');
     });
+
+    if (els.useManualModel) {
+        els.useManualModel.addEventListener('change', (e) => {
+            const useManual = e.target.checked;
+            els.modelSelectWrapper.style.display = useManual ? 'none' : 'block';
+            els.modelParamsWrapper.style.display = useManual ? 'block' : 'none';
+            els.gpuUtilWrapper.style.display = useManual ? 'none' : 'block';
+            els.manualKvFields.forEach(f => f.style.display = useManual ? 'block' : 'none');
+        });
+    }
 
     els.stepBatch.addEventListener('input', (e) => {
         els.stepBatchVal.textContent = e.target.value;
@@ -428,6 +446,14 @@ function bindEvents() {
 
 function getConfig() {
     return {
+        useManualModel: document.getElementById('use-manual-model').checked,
+        modelId: document.getElementById('model-id').value,
+        weightDtype: document.getElementById('weight-dtype').value,
+        kvDtype: document.getElementById('kv-dtype').value,
+        gpuMemoryUtilization: parseFloat(document.getElementById('gpu-memory-utilization').value),
+        tensorParallelSize: parseInt(document.getElementById('tensor-parallel-size').value, 10),
+        maxNumBatchedTokens: parseInt(document.getElementById('max-num-batched-tokens').value, 10),
+        maxModelLen: parseInt(document.getElementById('max-model-len').value, 10),
         modelParamsB: parseFloat(document.getElementById('model-params').value),
         prefillHw: document.getElementById('prefill-hw').value,
         decodeHw: document.getElementById('decode-hw').value,
@@ -439,6 +465,9 @@ function getConfig() {
         priorityPromptWeight: parseFloat(document.getElementById('priority-pw').value),
         priorityGenWeight: parseFloat(document.getElementById('priority-gw').value),
         maxBatchSize: parseInt(document.getElementById('max-batch').value, 10),
+        prefillChunkSize: parseInt(document.getElementById('prefill-chunk').value, 10),
+        globalMemoryBudgetBytes: parseInt(document.getElementById('global-memory-budget').value, 10),
+        preemptionThreshold: parseFloat(document.getElementById('preemption-threshold').value),
     };
 }
 
@@ -487,6 +516,9 @@ function handleWorkerMessage(e) {
     lastSnapshot = payload;
     updateDashboard(payload);
     if (type === 'READY') {
+        if (payload.config && payload.config.oomDetected) {
+            alert("Out of Memory! The model weights exceed the usable VRAM on the selected hardware.\n\nTry increasing Tensor Parallel Size or lowering GPU Memory Utilization.");
+        }
         els.btnPlay.disabled = false; els.btnStep.disabled = false; els.btnFast.disabled = false;
     } else if (type === 'DONE') {
         setStatus('done');

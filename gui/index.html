@@ -231,7 +231,23 @@
         <!-- Model -->
         <section class="config-section">
           <h3 class="section-title">Model</h3>
-          <div class="field">
+          <div class="field" style="display: flex; align-items: center; justify-content: space-between;">
+            <label for="use-manual-model">Manual Parameters</label>
+            <input type="checkbox" id="use-manual-model" style="width: auto; margin-right: 8px;" />
+          </div>
+          <div class="field" id="model-select-wrapper">
+            <label for="model-id">Architecture</label>
+            <select id="model-id">
+              <option value="Llama-3-8B" selected>Llama-3-8B</option>
+              <option value="Llama-3-70B">Llama-3-70B</option>
+              <option value="Mistral-7B-v0.1">Mistral-7B-v0.1</option>
+              <option value="Mixtral-8x7B">Mixtral-8x7B</option>
+              <option value="Qwen1.5-72B">Qwen1.5-72B</option>
+              <option value="Qwen2-7B">Qwen2-7B</option>
+              <option value="Phi-3-Mini">Phi-3-Mini</option>
+            </select>
+          </div>
+          <div class="field" id="model-params-wrapper" style="display: none;">
             <label for="model-params">Parameters (B)</label>
             <input
               type="number"
@@ -242,18 +258,46 @@
               step="0.5"
             />
           </div>
+          <div class="field">
+            <label for="weight-dtype">Weight Quantization</label>
+            <select id="weight-dtype">
+              <option value="FP16" selected>FP16 / BF16 (2 bytes)</option>
+              <option value="FP8">FP8 / INT8 (1 byte)</option>
+              <option value="INT4">INT4 (0.5 bytes)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="kv-dtype">KV Quantization</label>
+            <select id="kv-dtype">
+              <option value="FP16" selected>FP16 / BF16 (2 bytes)</option>
+              <option value="FP8">FP8 / INT8 (1 byte)</option>
+            </select>
+          </div>
         </section>
 
         <!-- Hardware -->
         <section class="config-section">
-          <h3 class="section-title">Hardware — Prefill</h3>
+          <h3 class="section-title">Hardware — Cluster</h3>
+          <div class="field">
+            <label for="tensor-parallel-size">Tensor Parallel Size (GPUs)</label>
+            <input type="number" id="tensor-parallel-size" value="1" min="1" max="128" step="1" />
+          </div>
+          <h3 class="section-title" style="margin-top: 12px">Hardware — Prefill</h3>
           <div class="field">
             <label for="prefill-hw">Profile</label>
             <select id="prefill-hw">
               <option value="H100_SXM" selected>H100 SXM (989 TFLOPS)</option>
               <option value="A100_80GB">A100 80GB (312 TFLOPS)</option>
               <option value="L4">L4 24GB (121 TFLOPS)</option>
+              <option value="H200">H200 141GB (989 TFLOPS)</option>
+              <option value="GB200">GB200 192GB (2500 TFLOPS)</option>
+              <option value="GB300">GB300 288GB (3000 TFLOPS)</option>
             </select>
+          </div>
+          <div class="field">
+            <label for="prefill-chunk">Prefill Chunk Size</label>
+            <input type="number" id="prefill-chunk" value="0" min="0" max="8192" step="64" />
+            <div class="field-hint">0 = Unchunked</div>
           </div>
           <h3 class="section-title" style="margin-top: 12px">
             Hardware — Decode
@@ -264,14 +308,21 @@
               <option value="H100_SXM">H100 SXM (3350 GB/s)</option>
               <option value="A100_80GB">A100 80GB (2039 GB/s)</option>
               <option value="L4" selected>L4 24GB (300 GB/s)</option>
+              <option value="H200">H200 141GB (4800 GB/s)</option>
+              <option value="GB200">GB200 192GB (8000 GB/s)</option>
+              <option value="GB300">GB300 288GB (10000 GB/s)</option>
             </select>
           </div>
         </section>
 
         <!-- KV Cache -->
         <section class="config-section">
-          <h3 class="section-title">KV Cache</h3>
-          <div class="field">
+          <h3 class="section-title">KV Cache Allocation</h3>
+          <div class="field" id="gpu-util-wrapper">
+            <label for="gpu-memory-utilization">GPU Memory Util. (vLLM)</label>
+            <input type="number" id="gpu-memory-utilization" value="0.90" min="0.1" max="1.0" step="0.01" />
+          </div>
+          <div class="field manual-kv-field" style="display: none;">
             <label for="kv-capacity">Capacity (tokens)</label>
             <input
               type="number"
@@ -281,6 +332,17 @@
               max="1000000"
               step="256"
             />
+          <div class="field manual-kv-field" style="display: none;">
+            <label for="global-memory-budget">Global Memory Budget (Bytes)</label>
+            <input
+              type="number"
+              id="global-memory-budget"
+              value="0"
+              min="0"
+              max="1000000000"
+              step="1024"
+            />
+            <div class="field-hint">0 = Unlimited</div>
           </div>
           <div class="field">
             <label for="kv-transfer">Transfer Latency (ms)</label>
@@ -313,6 +375,7 @@
               <option value="FCFS" selected>FCFS</option>
               <option value="Priority">Priority</option>
               <option value="ContinuousBatching">Continuous Batching</option>
+              <option value="PriorityContinuousBatching">Priority Cont. Batching</option>
             </select>
           </div>
           <div class="field priority-field" style="display: none">
@@ -337,8 +400,23 @@
               step="0.05"
             />
           </div>
+          <div class="field preemption-field" style="display: none">
+            <label for="preemption-threshold">Preemption Threshold</label>
+            <input
+              type="number"
+              id="preemption-threshold"
+              value="0.5"
+              min="0.1"
+              max="1.0"
+              step="0.1"
+            />
+          </div>
+          <div class="field">
+            <label for="max-num-batched-tokens">Max Batched Tokens</label>
+            <input type="number" id="max-num-batched-tokens" value="4096" min="1" max="100000" step="128" />
+          </div>
           <div class="field batch-field" style="display: none">
-            <label for="max-batch">Max Batch Size</label>
+            <label for="max-batch">Max Decode Batch</label>
             <input
               type="number"
               id="max-batch"
@@ -353,6 +431,10 @@
         <!-- Workload -->
         <section class="config-section">
           <h3 class="section-title">Workload</h3>
+          <div class="field">
+            <label for="max-model-len">Max Sequence Length</label>
+            <input type="number" id="max-model-len" value="8192" min="1" max="1000000" step="1024" />
+          </div>
           <div class="field">
             <label for="num-requests">Requests</label>
             <input

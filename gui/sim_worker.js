@@ -91,6 +91,7 @@ const EventType = {
     PREFILL_COMPLETE: 1,
     KV_TRANSFER_COMPLETE: 2,
     DECODE_STEP_COMPLETE: 3,
+    PREFILL_CHUNK_COMPLETE: 4,
 };
 
 const RequestState = {
@@ -152,13 +153,16 @@ class Request {
         this.trafficType = trafficType;
         this.state = RequestState.PENDING;
         this.tokensGenerated = 0;
+        this.prefillTokensProcessed = 0;
         this.prefillStart = 0;
         this.prefillEnd = 0;
         this.decodeStart = 0;
         this.completionTime = 0;
+        this.preemptionCount = 0;
     }
-    startPrefill(t) { this.state = RequestState.IN_PREFILL; this.prefillStart = t; }
-    transitionToDecode(t) { this.state = RequestState.IN_DECODE; this.prefillEnd = t; this.decodeStart = t; }
+    startPrefill(t) { this.state = RequestState.IN_PREFILL; if (this.prefillTokensProcessed === 0) this.prefillStart = t; }
+    finishPrefill(t) { this.prefillEnd = t; }
+    transitionToDecode(t) { this.state = RequestState.IN_DECODE; this.decodeStart = t; }
     complete(t) { this.state = RequestState.COMPLETED; this.completionTime = t; }
     generateToken() { this.tokensGenerated++; return this.tokensGenerated >= this.generationLength; }
     get prefillLatency() { return this.prefillEnd - this.prefillStart; }
@@ -286,7 +290,31 @@ const PROFILES = {
     H100_SXM:  { name: 'H100_SXM',  computeTflops: 989,  memBwGbps: 3350, memCapGb: 80  },
     A100_80GB: { name: 'A100_80GB', computeTflops: 312,  memBwGbps: 2039, memCapGb: 80  },
     L4:        { name: 'L4',        computeTflops: 121,  memBwGbps: 300,  memCapGb: 24  },
+    H200:      { name: 'H200',      computeTflops: 989,  memBwGbps: 4800, memCapGb: 141 },
+    GB200:     { name: 'GB200',     computeTflops: 2500, memBwGbps: 8000, memCapGb: 192 },
+    GB300:     { name: 'GB300',     computeTflops: 3000, memBwGbps: 10000, memCapGb: 288 },
 };
+
+const MODELS = {
+    "Llama-3-8B": { params_B: 8.03, num_layers: 32, num_kv_heads: 8, head_dimension: 128 },
+    "Llama-3-70B": { params_B: 70.6, num_layers: 80, num_kv_heads: 8, head_dimension: 128 },
+    "Mistral-7B-v0.1": { params_B: 7.24, num_layers: 32, num_kv_heads: 8, head_dimension: 128 },
+    "Mixtral-8x7B": { params_B: 46.7, num_layers: 32, num_kv_heads: 8, head_dimension: 128 },
+    "Qwen1.5-72B": { params_B: 72.7, num_layers: 80, num_kv_heads: 8, head_dimension: 128 },
+    "Qwen2-7B": { params_B: 7.62, num_layers: 28, num_kv_heads: 4, head_dimension: 128 },
+    "Phi-3-Mini": { params_B: 3.82, num_layers: 32, num_kv_heads: 32, head_dimension: 96 }
+};
+
+function get_bytes_per_param(dtype) {
+    switch (dtype) {
+        case "FP16":
+        case "BF16": return 2.0;
+        case "FP8":
+        case "INT8": return 1.0;
+        case "INT4": return 0.5;
+        default: return 2.0;
+    }
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  K-Means Clustering (for traffic classification)
@@ -377,13 +405,53 @@ class SimulationEngine {
 
         const prefillHw = PROFILES[config.prefillHw] || PROFILES.H100_SXM;
         const decodeHw = PROFILES[config.decodeHw] || PROFILES.L4;
-        const params = config.modelParamsB || 7.0;
-        this.prefillTimePerToken = (2.0 * params * 1e-3) / prefillHw.computeTflops;
-        this.decodeTimePerToken = (2.0 * params) / decodeHw.memBwGbps;
+        
+        const model = MODELS[config.modelId] || MODELS["Llama-3-8B"];
+        const params = config.useManualModel ? (config.modelParamsB || 7.0) : model.params_B;
+
+        const tpSize = config.useManualModel ? 1 : (config.tensorParallelSize || 1);
+        const paramsPerGpu = params / tpSize;
+
+        this.prefillTimePerToken = (2.0 * paramsPerGpu * 1e-3) / prefillHw.computeTflops;
+        this.decodeTimePerToken = (2.0 * paramsPerGpu) / decodeHw.memBwGbps;
         this.kvTransferLatency = (config.kvTransferLatencyMs || 0.5) / 1000.0;
         this.modelParamsB = params;
         this.prefillHw = prefillHw;
         this.decodeHw = decodeHw;
+
+        // Architectural Capacity Calculation
+        if (!config.useManualModel) {
+            const weightDtype = config.weightDtype || "FP16";
+            const kvDtype = config.kvDtype || "FP16";
+            const util = config.gpuMemoryUtilization || 0.90;
+            
+            const weightsBytes = params * 1e9 * get_bytes_per_param(weightDtype);
+            const usableVramBytes = decodeHw.memCapGb * 1e9 * util;
+            const tokenCostBytes = 2 * model.num_layers * model.num_kv_heads * model.head_dimension * get_bytes_per_param(kvDtype);
+            
+            const weightsPerGpu = weightsBytes / tpSize;
+            const kvCostPerGpu = tokenCostBytes / tpSize;
+            this.kvCostPerGpu = kvCostPerGpu;
+            
+            if (usableVramBytes < weightsPerGpu) {
+                console.error(`OOM: Weights (${(weightsPerGpu/1e9).toFixed(2)}GB) exceed Usable VRAM (${(usableVramBytes/1e9).toFixed(2)}GB) per GPU`);
+                this.config.globalMemoryBudgetTokens = 1; // Prevent div by 0 or negative
+                this.config.oomDetected = true;
+            } else {
+                this.config.globalMemoryBudgetTokens = Math.floor((usableVramBytes - weightsPerGpu) / kvCostPerGpu);
+            }
+        } else {
+            // Manual token capacity mapping
+            if (config.globalMemoryBudgetBytes > 0) {
+                // Approximate 2MB per 1024 tokens if manual
+                this.config.globalMemoryBudgetTokens = Math.floor(config.globalMemoryBudgetBytes / 2048);
+            } else {
+                this.config.globalMemoryBudgetTokens = 0; // Unlimited
+            }
+        }
+
+        // Apply max batched tokens limit for prefill
+        this.maxNumBatchedTokens = config.maxNumBatchedTokens || 4096;
 
         this.stats = {
             totalCompleted: 0, totalTokens: 0,
@@ -400,9 +468,23 @@ class SimulationEngine {
     }
 
     addRequest(id, promptLen, genLen, arrivalTime, trafficType = 'SimpleQuery') {
+        let maxLen = this.config.maxModelLen || 8192;
+        if (this.config.globalMemoryBudgetTokens && this.config.globalMemoryBudgetTokens > 0) {
+            maxLen = Math.min(maxLen, this.config.globalMemoryBudgetTokens);
+        }
+        if (promptLen + genLen > maxLen) {
+            if (promptLen >= maxLen) {
+                promptLen = Math.max(1, maxLen - 1);
+                genLen = 1;
+            } else {
+                genLen = maxLen - promptLen;
+            }
+        }
+        
         const req = new Request(id, promptLen, genLen, arrivalTime, trafficType);
         this.requests.set(id, req);
-        const cache = new KVCache(this.config.kvCacheCapacity || 4096);
+        const cacheCap = this.config.useManualModel ? (this.config.kvCacheCapacity || 4096) : this.config.maxModelLen;
+        const cache = new KVCache(cacheCap);
         cache.evictionPolicy = this.config.evictionPolicy || 'None';
         this.kvCaches.set(id, cache);
         this.eventQueue.push({ time: arrivalTime, type: EventType.REQUEST_ARRIVAL, requestId: id });
@@ -414,10 +496,11 @@ class SimulationEngine {
         this.currentTime = ev.time;
 
         switch (ev.type) {
-            case EventType.REQUEST_ARRIVAL:      this._handleArrival(ev); break;
-            case EventType.PREFILL_COMPLETE:     this._handlePrefillComplete(ev); break;
-            case EventType.KV_TRANSFER_COMPLETE: this._handleKvTransfer(ev); break;
-            case EventType.DECODE_STEP_COMPLETE: this._handleDecodeStep(ev); break;
+            case EventType.REQUEST_ARRIVAL:        this._handleArrival(ev); break;
+            case EventType.PREFILL_COMPLETE:       this._handlePrefillComplete(ev); break;
+            case EventType.PREFILL_CHUNK_COMPLETE: this._handlePrefillChunkComplete(ev); break;
+            case EventType.KV_TRANSFER_COMPLETE:   this._handleKvTransfer(ev); break;
+            case EventType.DECODE_STEP_COMPLETE:   this._handleDecodeStep(ev); break;
         }
 
         // Sample queue depth, but prevent unbound array growth
@@ -444,17 +527,18 @@ class SimulationEngine {
     _scheduleOrder(pendingReqs) {
         const policy = this.config.scheduler || 'FCFS';
         const sorted = [...pendingReqs];
-        if (policy === 'Priority') {
+        if (policy === 'Priority' || policy === 'PriorityContinuousBatching') {
             const pw = this.config.priorityPromptWeight || 0.1;
             const gw = this.config.priorityGenWeight || 0.5;
             sorted.sort((a, b) => {
-                return (a.promptLength * pw + a.generationLength * gw) -
-                       (b.promptLength * pw + b.generationLength * gw);
+                const scoreA = (a.promptLength * pw + a.generationLength * gw);
+                const scoreB = (b.promptLength * pw + b.generationLength * gw);
+                return scoreA - scoreB; // Lower score is higher priority
             });
         } else {
             sorted.sort((a, b) => a.arrivalTime - b.arrivalTime);
         }
-        if (policy === 'ContinuousBatching') {
+        if (policy === 'ContinuousBatching' || policy === 'PriorityContinuousBatching') {
             return sorted.slice(0, this.config.maxBatchSize || 8).map(r => r.id);
         }
         return sorted.map(r => r.id);
@@ -462,22 +546,61 @@ class SimulationEngine {
 
     _trySchedulePrefill() {
         if (this.pendingIds.length === 0 || this.prefillBusy) return;
-        const pendingReqs = this.pendingIds.map(id => this.requests.get(id));
+        
+        // Filter out preempted requests that haven't been reset properly, just in case
+        const pendingReqs = this.pendingIds.map(id => this.requests.get(id)).filter(r => r.state === RequestState.PENDING || r.state === RequestState.PREEMPTED);
+        if (pendingReqs.length === 0) return;
+        
         const ordered = this._scheduleOrder(pendingReqs);
         if (ordered.length === 0) return;
+        
+        // Memory Check
+        if (this.config.globalMemoryBudgetTokens && this.config.globalMemoryBudgetTokens > 0) {
+            let totalMemory = 0;
+            for (const [, cache] of this.kvCaches) {
+                totalMemory += cache.currentSize || cache.entries.size;
+            }
+            const req = this.requests.get(ordered[0]);
+            if (totalMemory + req.promptLength > this.config.globalMemoryBudgetTokens) {
+                return; // Not enough memory to prefill this request right now. Wait for decode to free up space.
+            }
+        }
+
         const chosenId = ordered[0];
-        this.pendingIds = this.pendingIds.filter(id => id !== chosenId);
         const req = this.requests.get(chosenId);
+        
         this.prefillBusy = true;
         this.prefillReqId = chosenId;
         req.startPrefill(this.currentTime);
-        const dt = req.promptLength * this.prefillTimePerToken;
-        this.eventQueue.push({ time: this.currentTime + dt, type: EventType.PREFILL_COMPLETE, requestId: chosenId });
+        
+        // Remove from pending immediately since it's actively prefilling
+        this.pendingIds = this.pendingIds.filter(id => id !== chosenId);
+        
+        let chunkSize = req.promptLength - req.prefillTokensProcessed;
+        let isChunked = false;
+        
+        if (this.config.prefillChunkSize && this.config.prefillChunkSize > 0) {
+            if (chunkSize > this.config.prefillChunkSize) {
+                chunkSize = this.config.prefillChunkSize;
+                isChunked = true;
+            }
+        }
+        
+        const dt = chunkSize * this.prefillTimePerToken;
+        
+        // Track how many tokens we are processing in this event
+        req.currentChunkSize = chunkSize;
+        
+        if (isChunked) {
+            this.eventQueue.push({ time: this.currentTime + dt, type: EventType.PREFILL_CHUNK_COMPLETE, requestId: chosenId });
+        } else {
+            this.eventQueue.push({ time: this.currentTime + dt, type: EventType.PREFILL_COMPLETE, requestId: chosenId });
+        }
     }
 
     _tryScheduleDecode() {
         if (this.decodeWaiting.length > 0) {
-            const isCB = (this.config.scheduler === 'ContinuousBatching');
+            const isCB = (this.config.scheduler === 'ContinuousBatching' || this.config.scheduler === 'PriorityContinuousBatching');
             if (!isCB && this.activeDecodeRequests.length > 0) {
                 // sequential
             } else {
@@ -496,10 +619,50 @@ class SimulationEngine {
                 }
             }
         }
+        
+        // Memory Pressure Preemption check
+        if (this.config.globalMemoryBudgetTokens && this.config.globalMemoryBudgetTokens > 0 && this.activeDecodeRequests.length > 0) {
+            let totalMemory = 0;
+            // Count total memory of ALL requests (active and decodeWaiting)
+            for (const [, cache] of this.kvCaches) {
+                totalMemory += cache.currentSize || cache.entries.size;
+            }
+            if (totalMemory > this.config.globalMemoryBudgetTokens) {
+                if (this.config.scheduler === 'PriorityContinuousBatching') {
+                    // Preempt the lowest priority active request
+                    const activeReqs = this.activeDecodeRequests.map(id => this.requests.get(id));
+                    // Sort descending (worst score first)
+                    const pw = this.config.priorityPromptWeight || 0.1;
+                    const gw = this.config.priorityGenWeight || 0.5;
+                    activeReqs.sort((a, b) => {
+                        const scoreA = (a.promptLength * pw + a.generationLength * gw);
+                        const scoreB = (b.promptLength * pw + b.generationLength * gw);
+                        return scoreB - scoreA;
+                    });
+                    
+                    const victim = activeReqs[0];
+                    victim.state = RequestState.PREEMPTED;
+                    victim.preemptionCount++;
+                    this.stats.totalPreemptions++;
+                    this.stats.totalMemoryPressureEvictions = (this.stats.totalMemoryPressureEvictions || 0) + 1;
+                    
+                    this.activeDecodeRequests = this.activeDecodeRequests.filter(id => id !== victim.id);
+                    this.pendingIds.push(victim.id);
+                    
+                    // Clear its KV cache
+                    this.kvCaches.get(victim.id).entries.clear();
+                } else {
+                    // Just clear cache for a waiting request if not priority-based? (FCFS etc)
+                    // Simplified: do nothing or just log
+                }
+            }
+        }
 
         if (this.activeDecodeRequests.length > 0 && !this.decodeStepScheduled) {
             const batchSize = this.activeDecodeRequests.length;
-            let baseDt = this.decodeTimePerToken + batchSize * 0.0001;
+            // More accurate KV Cache read overhead + tiny fixed logic overhead
+            const overheadPerReq = (this.kvCostPerGpu / (this.decodeHw.memBwGbps * 1e9)) || 0.000001;
+            let baseDt = this.decodeTimePerToken + batchSize * (overheadPerReq + 0.000001);
             let maxMissPenalty = 0;
 
             for (const reqId of this.activeDecodeRequests) {
@@ -526,8 +689,52 @@ class SimulationEngine {
         this._trySchedulePrefill();
     }
 
+    _handlePrefillChunkComplete(ev) {
+        const req = this.requests.get(ev.requestId);
+        req.prefillTokensProcessed += req.currentChunkSize;
+        
+        const cache = this.kvCaches.get(ev.requestId);
+        cache.generateKvCache(req.prefillTokensProcessed, this.currentTime);
+        
+        this.prefillBusy = false;
+        this.prefillReqId = -1;
+        
+        // Check for preemption if a higher priority request arrived during chunk processing
+        let shouldPreempt = false;
+        if (this.pendingIds.length > 0 && this.config.scheduler === 'PriorityContinuousBatching') {
+            const pendingReqs = this.pendingIds.map(id => this.requests.get(id));
+            const ordered = this._scheduleOrder(pendingReqs);
+            if (ordered.length > 0) {
+                const nextReq = this.requests.get(ordered[0]);
+                const pw = this.config.priorityPromptWeight || 0.1;
+                const gw = this.config.priorityGenWeight || 0.5;
+                const currentScore = (req.promptLength * pw + req.generationLength * gw);
+                const nextScore = (nextReq.promptLength * pw + nextReq.generationLength * gw);
+                
+                // If the next pending request has a significantly better score, preempt
+                if (nextScore < currentScore * (this.config.preemptionThreshold || 0.5)) {
+                    shouldPreempt = true;
+                }
+            }
+        }
+        
+        if (shouldPreempt) {
+            req.state = RequestState.PENDING;
+            req.preemptionCount++;
+            this.stats.totalPreemptions++;
+            this.pendingIds.push(ev.requestId); // put back in pending queue
+        } else {
+            // Re-queue it in pendingIds to continue prefilling next, but put it at the front so it gets picked immediately if no preemption
+            this.pendingIds.unshift(ev.requestId); 
+        }
+        
+        this._trySchedulePrefill();
+    }
+
     _handlePrefillComplete(ev) {
         const req = this.requests.get(ev.requestId);
+        req.prefillTokensProcessed += req.currentChunkSize;
+        req.finishPrefill(this.currentTime);
         const cache = this.kvCaches.get(ev.requestId);
         cache.generateKvCache(req.promptLength, this.currentTime);
         this.stats.totalCacheHits += cache.hits;
@@ -568,6 +775,7 @@ class SimulationEngine {
                 this.stats.totalCacheHits += cache.hits;
                 this.stats.totalCacheMisses += cache.misses;
                 this.stats.totalEvictions += cache.evictions;
+                this.kvCaches.delete(reqId); // Free VRAM
 
                 // Compute per-request throughput (tokens / decode_time)
                 const reqThroughput = req.decodeLatency > 0 ? req.generationLength / req.decodeLatency : 0;
@@ -653,6 +861,7 @@ class SimulationEngine {
         }
 
         return {
+            config: this.config,
             time: this.currentTime, completed, total: this.requests.size,
             pending: this.pendingIds.length,
             prefillBusy: this.prefillBusy,
