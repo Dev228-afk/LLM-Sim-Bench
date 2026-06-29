@@ -10,7 +10,7 @@ The simulator models the complex, non-linear request lifecycles of agentic AI wo
 
 ---
 
-## 🚀 Key Highlights & Academic Foundations
+## Key Highlights & Academic Foundations
 
 * **High-Throughput C++20 Engine**: Tracks **50,000+ state transitions per second**.
 * **Mathematical Validation**: Simulates queue depths, scheduling latencies, and resource contention with **within 8% accuracy** of open-source production baselines. Validated against **M/G/c** queueing formulations for heavy-tailed, high-variance agentic workflows, and baseline **Erlang-C (M/M/c)** models for standard uniform LLM traffic.
@@ -22,7 +22,7 @@ The simulator models the complex, non-linear request lifecycles of agentic AI wo
 
 ---
 
-## 🏛️ System Architecture
+## System Architecture
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
@@ -53,7 +53,7 @@ The simulator models the complex, non-linear request lifecycles of agentic AI wo
 
 ---
 
-## 🛠️ Installation & Build
+## Installation & Build
 
 ### Prerequisites
 
@@ -85,7 +85,7 @@ pip install -r requirements.txt
 
 ---
 
-## 💻 Quick Start
+## Quick Start
 
 ### 1. Python API
 
@@ -141,7 +141,7 @@ python python/analysis/clustering.py --csv results/sweep_results.csv
 
 ---
 
-## 📊 Evaluation & Visualizations
+## Evaluation & Visualizations
 
 Our simulator produces academic-grade visualizations to benchmark and characterize serving performance:
 
@@ -151,7 +151,7 @@ Our simulator produces academic-grade visualizations to benchmark and characteri
 
 ---
 
-## 🎨 Interactive GUI Dashboard
+## Interactive GUI Dashboard
 
 The simulator includes a native HTML5/CSS3/JavaScript GUI that runs inside your browser:
 * **Interactive Controls**: Fine-tune hardware specs, workload generation parameters, arrival rates, and scheduler policies.
@@ -167,7 +167,7 @@ python -m http.server 8000 --directory gui
 
 ---
 
-## 🛡️ Security & Validations
+## Security & Validations
 
 The optional `security.py` wrapper implements production-ready simulation safeguards:
 * **Strict Validation**: Bounds-checking constraints on incoming workloads (tokens, sizes, parameters) to model hardware memory limits accurately.
@@ -175,6 +175,6 @@ The optional `security.py` wrapper implements production-ready simulation safegu
 
 ---
 
-## 📝 License
+## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
